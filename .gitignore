@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.db
+*_faiss/
+*_faiss_store/
+mem0_faiss_store/
+cache_faiss_*/
+memory_faiss/
+.idea/

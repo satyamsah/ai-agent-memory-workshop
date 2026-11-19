@@ -1,7 +1,9 @@
 # Memory Management for AI Agents
-### A 2.5-hour hands-on workshop
+### A 2.5-hour hands-on workshop — Facilitator Guide
 
-> Build a memory-aware AI agent that remembers conversations, knows its product, and recalls past interactions — using Claude, SQLite, and FAISS.
+> Build a memory-aware AI agent that remembers conversations, learns facts, recalls past events, and understands user patterns — using Claude, SQLite, and FAISS.
+
+**Date:** Nov 21, 2024 · 11 AM – 1:30 PM PT · Online
 
 ---
 
@@ -10,320 +12,454 @@
 | Time | Block | Format |
 |------|-------|--------|
 | 0:00–0:15 | Setup & welcome | Setup |
-| 0:15–0:45 | Part 1 — Why agents need memory | Talk + demo |
-| 0:45–1:05 | Module 1 — Conversational memory | Hands-on |
-| 1:05–1:20 | ☕ Break | — |
-| 1:20–1:35 | Part 2 — Semantic & Episodic memory | Talk |
-| 1:35–1:55 | Module 2 — Semantic memory | Hands-on |
-| 1:55–2:15 | Module 3 — Memory Manager | Hands-on |
-| 2:15–2:30 | Production issues + Q&A | Talk + Q&A |
+| 0:15–0:40 | Part 1 — Why agents need memory | Talk + Q&A |
+| 0:40–0:55 | Demo — Context window crash + recovery | Demo |
+| 0:55–1:15 | Module 1 — Conversational memory | Hands-on |
+| 1:15–1:25 | ☕ Break | — |
+| 1:25–1:45 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
+| 1:45–2:05 | Module 3 — Memory Manager routing | Hands-on |
+| 2:05–2:20 | Demo 2 — Mem0 (industry standard) | Demo |
+| 2:20–2:30 | Q&A + wrap up | Q&A |
 
 ---
 
-## Part 1 — Why Agents Need Memory
+## Setup (0:00–0:15)
 
-### 1.1 The LLM Context Window
+While students run `python check_setup.py`:
 
-Every LLM has a **context window** — the maximum amount of text it can read at one time.
-Think of it as the LLM's **RAM**.
+- Introduce yourself
+- Ask: "Who here has built something with an LLM?"
+- Ask: "Who ran into a problem where the agent forgot something?"
 
-```
-┌─────────────────────────────────────────────────────┐
-│              LLM Context Window                     │
-│                                (e.g. 200k tokens)   │
-│                                                     │
-│  ┌─────────────────────────┐                        │
-│  │  System prompt          │  ░░░░░░░░░░░░░░░░░░░  │
-│  ├─────────────────────────┤                        │
-│  │  Conversation history   │  ████████░░░░░░░░░░░  │
-│  ├─────────────────────────┤                        │
-│  │  Retrieved documents    │  ████░░░░░░░░░░░░░░░  │
-│  ├─────────────────────────┤                        │
-│  │  Current question       │  █░░░░░░░░░░░░░░░░░░  │
-│  └─────────────────────────┘                        │
-│                                                     │
-│  When full → oldest messages get DROPPED            │
-└─────────────────────────────────────────────────────┘
-```
-
-**The problem:** conversations keep growing, but the context window is fixed.
-Once it fills up, the agent starts forgetting the beginning of the conversation.
-
-This is not a bug. It is a fundamental constraint of how LLMs work.
-
-> **Key insight:** The context window is the LLM's working memory — fast, powerful, but limited and temporary.
-> Everything outside the context window is **invisible** to the agent.
+That's the problem we're solving today.
 
 ---
 
-### 1.2 Stateless Agent — What Failure Looks Like
+## Part 1 — Why Agents Need Memory (0:15–0:40)
 
-An agent with no external memory is called a **stateless agent**.
-It can perceive input, reason, and respond — but it forgets everything after each turn.
+### 1.1 LLMs are stateless
 
-Here is what a stateless agent looks like in a real support scenario:
+Every API call is completely fresh. Claude does not remember the previous call.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                   STATELESS AGENT (no memory)                   │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Turn 1   User:  "I'm getting a 401 error on my API calls."     │
-│           Agent: "A 401 means your API key is invalid.          │
-│                   Can you check your Authorization header?"     │
-│                                                                 │
-│  Turn 2   User:  "I checked — the key looks right."             │
-│           Agent: "Try regenerating the key in the dashboard."   │
-│                                                                 │
-│  Turn 3   User:  "Still broken. Same error."                    │
-│           Agent: "What error are you seeing?"  ← FORGOT         │
-│                                                                 │
-│  Turn 4   User:  "Same issue as last week too."                 │
-│           Agent: "I don't have any record of previous           │
-│                   interactions. Can you describe the issue?"    │
-│                              ↑ FORGOT LAST WEEK TOO             │
-└─────────────────────────────────────────────────────────────────┘
+Call 1:   messages = [{"role": "user", "content": "I have a 401 error"}]
+          → Claude responds
+
+Call 2:   messages = [{"role": "user", "content": "Still broken"}]
+          → Claude has NO idea what "still broken" means
+            It never saw Call 1
 ```
 
-**Three things broke:**
-1. The agent forgot the conversation **within the same session** (Turn 3)
-2. The agent has no memory of **past sessions** (Turn 4)
-3. The agent doesn't know the product — it gave a generic answer
+If you want the agent to remember — **your code must pass the history.**
+The LLM does not manage this for you.
 
-**This is the problem we are solving today.**
+> **Audience question:**
+> "Who here has built a chatbot that just passes the full conversation history every turn?
+>  What happened when the conversation got long?"
 
 ---
 
-### 1.3 Memory-Augmented Agent — The Fix
+### 1.2 Short-term vs Long-term memory
 
-A memory-augmented agent stores information in an **external database** — outside the context window.
-Before each response, it **retrieves** what it needs and loads it into the context window.
+**Short-term — lives during the session, gone when it ends:**
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                 MEMORY-AUGMENTED AGENT                           │
-├──────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│   User query                                                     │
-│       │                                                          │
-│       ▼                                                          │
-│  ┌─────────────┐    reads from    ┌──────────────────────────┐  │
-│  │             │ ◄─────────────── │   External Memory        │  │
-│  │    Agent    │                  │                          │  │
-│  │  (Claude)   │ ─────────────►  │  • Conversation history  │  │
-│  │             │    writes to     │  • Product knowledge     │  │
-│  └─────────────┘                  │  • Past tickets          │  │
-│       │                           └──────────────────────────┘  │
-│       ▼                                                          │
-│   Response (grounded, contextual, remembers history)            │
-└──────────────────────────────────────────────────────────────────┘
-```
+| Type | What it is | Example |
+|------|-----------|---------|
+| Working memory | The context window — current API call | Everything in `messages` right now |
+| Conversational memory | History passed each turn | Turns 1–N of this session |
+| Semantic cache | Cached Q&A pairs — same question, no LLM call | "rate limit?" → cached answer ⚡ |
 
-Same conversation, now with memory:
+**Long-term — survives across sessions, stored in a database:**
 
-```
-  Turn 3   User:  "Still broken. Same error."
-           Agent: "Still seeing the 401 from your API key?         ← remembered Turn 1
-                   Let me check if this happened before..."        ← checks past tickets
-                   "I see you had a similar issue on Oct 14 —
-                   you hadn't updated the key in production.
-                   Is that the case again?"                        ← recalled past ticket
-```
+| Type | What it is | Example |
+|------|-----------|---------|
+| Facts | Simple facts about the user | "Alex is on Pro tier" |
+| Episodic | Specific events with timestamps | "Nov 15 — Alex had 401, trailing newline" |
+| Understanding | Patterns learned over time | "Alex always makes copy-paste errors" |
+
+> **Key insight from Google's agent memory research:**
+> Facts are exact — look them up in SQL.
+> Understanding is meaning — recall it from a vector store.
+> They must NOT live in the same place.
 
 ---
 
-### 1.4 The Six Memory Types
-
-Not all memory is the same. Just like humans have different kinds of memory, agents do too.
+### 1.3 Where memory lives
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     AGENT MEMORY TYPES                          │
-├────────────────────────┬────────────────────────────────────────┤
-│    SHORT-TERM          │    LONG-TERM                           │
-├────────────────────────┼────────────────────────────────────────┤
-│                        │                                        │
-│  Working Memory        │  Semantic Memory                       │
-│  The LLM context       │  Facts & knowledge base                │
-│  window itself.        │  "Free tier = 1k req/day"              │
-│  Fast, temporary.      │  Stored in a vector store.             │
-│                        │                                        │
-│  Conversational        │  Episodic Memory                       │
-│  Memory                │  Past events & interactions            │
-│  Current session       │  "User had 401 issue Oct 14"           │
-│  chat history.         │  Stored with timestamps.               │
-│  Stored in SQL.        │                                        │
-│                        │  Procedural Memory                     │
-│                        │  Learned workflows & patterns          │
-│                        │  "Always check env vars for 401"       │
-│                        │                                        │
-│                        │  Summary Memory                        │
-│                        │  Compressed old conversations          │
-│                        │  When context window fills up.         │
-└────────────────────────┴────────────────────────────────────────┘
+SHORT-TERM                          LONG-TERM
+──────────────────────────          ──────────────────────────────────
+Context window (Claude API)         SQLite
+  current messages list               → facts: "Alex on Pro tier"
+                                       → episodic: "Nov 15 — 401 issue"
+Conversation turns (SQLite)         
+  this session only                 FAISS vector store
+                                       → understanding: "Alex copy-pastes badly"
+Semantic cache (SQLite + FAISS)        → semantic search across all memories
+  within session
 ```
 
-> **Today we build three:** Conversational, Semantic, and Episodic.
-> The Memory Manager ties them all together.
+**The two-terminal rule:**
+- Close the terminal → short-term is gone
+- Open a new terminal → long-term is still there
+
+> **Audience question:**
+> "If you close your laptop and reopen it tomorrow — what should the agent remember about you?
+>  What should it forget?"
 
 ---
 
-### 1.5 The Memory Manager
+### 1.4 Facts vs Understanding — the most important distinction
 
-The **Memory Manager** is the brain between the agent and the database.
-It decides: which memory to read, what to write, and when to forget.
+From Google's agent memory architecture:
 
+**Facts are exact. You look them up.**
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      MEMORY MANAGER                             │
-│                                                                 │
-│    Agent asks a question                                        │
-│           │                                                     │
-│           ▼                                                     │
-│    ┌─────────────────────────────────────────────────────┐     │
-│    │  Route: what memory does this question need?        │     │
-│    │                                                     │     │
-│    │  "My API key isn't working"                         │     │
-│    │       → read conversational (what did we say?)      │     │
-│    │       → read semantic (what do docs say about 401?) │     │
-│    │       → read episodic (did this happen before?)     │     │
-│    └─────────────────────────────────────────────────────┘     │
-│           │                                                     │
-│           ▼                                                     │
-│    Retrieved context injected into context window               │
-│           │                                                     │
-│           ▼                                                     │
-│    Agent responds — then Memory Manager writes back             │
-│       → save this turn to conversational memory                 │
-│       → save any new facts learned                              │
-└─────────────────────────────────────────────────────────────────┘
+"What tier is Alex on?"  →  SQL query  →  "Pro"
+"What did Alex buy?"     →  SQL query  →  exact rows
 ```
 
-**Two types of memory operations:**
+**Understanding is meaning. You recall it.**
+```
+"What do I know about Alex's style?"  →  vector search  →  "prefers simple, dark colors"
+"What patterns does Alex have?"       →  vector search  →  "makes copy-paste errors"
+```
 
-| Type | Description | Example |
-|------|-------------|---------|
-| **Deterministic** | Always runs, regardless of query | Save every conversation turn |
-| **Agent-triggered** | Agent decides when to call it | "Summarize this thread" |
+> **Common mistake:** putting everything in the vector store.
+> Vector stores return *similar* results, not *exact* results.
+> If Alex asks "what tier am I on?" — the agent should not *guess from similar memories*.
+> It should query the database for the exact row.
 
 ---
 
-### 1.6 Memory in Code — From Variable to Database
+### 1.5 How memory is written — sync vs async
 
-Before we build, let's see what memory looks like at each level:
+**Facts → write immediately (synchronous)**
+```
+User: "I just upgraded to Pro"
+         ↓
+Agent writes immediately: { fact: "Alex on Pro tier", timestamp: now }
+         ↓
+If the user asks next turn: "What tier am I on?" → answer is there
+```
 
-**Level 1 — A Python variable (no persistence)**
+**Understanding → write after enough context (asynchronous)**
+```
+Turn 3: User fixes 401 — trailing newline again
+Turn 7: User fixes 403 — copy-pasted scope name wrong
+Turn 12: User fixes 401 — trailing newline again
+         ↓
+Pattern emerges: "Alex makes copy-paste errors with credentials"
+         ↓
+Extract AFTER session, not during — don't update identity from one sentence
+```
+
+> **Audience question:**
+> "Why is it dangerous to update understanding from a single sentence?
+>  Example: user says 'maybe I like yellow today' — should the agent remember 'user likes yellow'?"
+
+---
+
+## Demo — Context Window Crash + Recovery (0:40–0:55)
+
+```
+python demo/context_window.py
+```
+
+**What to say while running:**
+
+"This is working memory — the context window. Watch the bar fill up as we talk.
+At 75% — yellow warning. At 90% — the API throws a real error.
+This is not simulated. This is what your users hit in production.
+
+Watch what happens next — the Memory Manager kicks in.
+It compresses the old turns into a summary.
+Context drops. Conversation continues.
+The agent didn't lose the thread — it summarized it."
+
+**After the demo:**
+> "This is summary memory — the 6th type. Compression of old conversations.
+>  The agent didn't forget — it remembered the shape, not every word."
+
+---
+
+## Module 1 — Conversational Memory (0:55–1:15)
+
+### Theory (3 mins)
+
+"You just saw the context window fill up. That's working memory — the context window itself.
+
+Now we're going to build conversational memory — the turns of this session stored in SQLite.
+
+Without it: agent forgets mid-conversation.
+With it: agent holds full context for the session.
+
+And here's the key — because it's on disk, it survives the terminal closing.
+That's the bridge between short-term and long-term."
+
+### The two-terminal moment
+
+**Before adding memory:**
+```
+Terminal 1:
+  You: I have a 401 error
+  You: Same issue as last week
+  Agent: I don't have any record of previous interactions  ← fails
+
+[Close terminal. Open new terminal.]
+
+Terminal 2:
+  You: What was my issue last time?
+  Agent: I have no context from previous sessions  ← blank slate
+```
+
+**After adding memory:**
+```
+Terminal 1:
+  You: I have a 401 error
+  You: Fixed it — trailing newline
+  [Memory saved to SQLite]
+
+[Close terminal. Open new terminal.]
+
+Terminal 2:
+  You: What was my issue last time?
+  Agent: Last session you had a 401 error caused by a trailing newline
+         in your API key  ← remembers
+```
+
+### Build
+
+```
+python modules/01-conversational/module.py
+```
+
+Uncomment STEP 1 → STEP 2 → STEP 3
+
+**STEP 1:** Create SQLite `turns` table
+**STEP 2:** Save every turn (sync — write immediately)
+**STEP 3:** Load history before each call
+
+### After Module 1
+
+> **Audience question:**
+> "You're now saving every turn. What happens after 1000 turns?
+>  You load all of them every time — what's wrong with that?"
+>
+> Expected: context fills up, slow, expensive
+> → That's what Module 2 solves
+
+---
+
+## Module 2 — Long-term Memory Extraction + Semantic Cache (1:25–1:45)
+
+### Theory (3 mins)
+
+"Module 1 saves every word. That's not how humans remember.
+
+A support agent doesn't remember every word of a call.
+They remember: 'Alex called Nov 15, had a 401, trailing newline, fixed.'
+That's episodic memory — a specific event, compressed, with a timestamp.
+
+They also know: 'Alex always makes copy-paste errors.'
+That's understanding — a pattern across many sessions.
+
+We're going to build both. Claude reads the conversation and extracts what matters.
+
+And one more thing — semantic cache. If the same question gets asked twice,
+why call the LLM again? Cache the answer. Retrieve it by meaning, not exact match."
+
+### Semantic cache — the cost saver
+
+```
+Turn 1: "What's the rate limit on free tier?"
+        → no cache hit → LLM call → "1,000 req/day"
+        → SAVE TO CACHE: { question, answer, embedding }
+
+Turn 4: "How many requests per day do I get on free?"
+        → semantic search on cache
+        → HIT — similar meaning to Turn 1 question
+        → return cached answer instantly
+        → ⚡ 0 tokens used, 0ms LLM latency
+```
+
+Students see in terminal:
+```
+  [cache miss] calling LLM...
+  Agent: Free tier is 1,000 req/day
+
+  [cache HIT ⚡] returning cached answer (0 tokens)
+  Agent: Free tier is 1,000 req/day
+```
+
+**Where cache is stored:**
+- SQLite → the Q&A pair (question text + answer text)
+- FAISS → the question embedding (for semantic similarity search)
+
+### What gets extracted
+
+```
+Conversation turn:
+  User: "Fixed it — was a trailing newline in the key I copy-pasted"
+  Agent: "Great, that's a common issue. Always check for whitespace."
+          ↓
+Claude Haiku extracts:
+  Fact:      "Alex uses copy-paste for API keys"        → SQLite (sync)
+  Episodic:  "Nov 18 — 401 fixed, trailing newline"    → SQLite (sync)
+  Understanding: "Alex makes copy-paste errors"        → FAISS (async)
+```
+
+### The cross-session moment
+
+```
+─── Session 1 (run the script) ──────────────────────
+  You: Hi I'm getting a 401 error
+  You: Fixed it, was a trailing newline
+  [Memory extracted and saved]
+  ✓ Fact: "Alex had 401 — trailing newline"
+  ✓ Understanding: "Alex makes copy-paste errors"
+
+[Close terminal]
+
+─── Session 2 (run the script again) ────────────────
+  Agent: Welcome back Alex. Last time you had a 401 caused
+         by a trailing newline in your key. Same issue today?
+```
+
+### Build
+
+```
+python modules/02-extraction/module.py
+```
+
+Uncomment STEP 1 → STEP 2 → STEP 3
+
+**STEP 1:** Extract facts + episodic after each turn → save to SQLite
+**STEP 2:** Extract understanding after each turn → save to FAISS
+**STEP 3:** Add semantic cache — check cache before LLM call, save after
+**STEP 4:** Load long-term memory at session start
+
+### After Module 2
+
+> **Audience question:**
+> "Claude just extracted memories from the conversation.
+>  What could go wrong?
+>  Should users be able to delete their memories?"
+>
+> Expected: wrong extraction, stale facts, privacy/GDPR
+
+---
+
+## Module 3 — Memory Manager Routing (1:45–2:05)
+
+### Theory (3 mins)
+
+"You now have three memory stores:
+  - SQLite for conversational turns
+  - SQLite for facts and episodic memories
+  - FAISS for understanding
+
+Every query hits all three? That's slow and noisy.
+The right answer for 'what tier am I on?' does not need FAISS.
+The right answer for 'what do I usually do wrong?' does not need an exact SQL lookup.
+
+The Memory Manager decides what to read and what to write for each query."
+
+### The routing logic
+
+```
+Query: "What tier am I on?"
+  → exact fact → SQL query → "Pro tier"
+
+Query: "Same issue as last week"
+  → episodic → SQL query by timestamp → "Nov 15 — 401, trailing newline"
+
+Query: "What do I usually get wrong?"
+  → understanding → FAISS semantic search → "copy-paste errors with credentials"
+
+Query: "How do I fix a 429 error?"
+  → no personal memory needed → agent answers from training
+```
+
+### Build
+
+```
+python modules/03-memory-manager/module.py
+```
+
+Uncomment STEP 1 → STEP 2 → STEP 3
+
+**STEP 1:** Route reads — which store for which query type
+**STEP 2:** Route writes — sync facts, async understanding
+**STEP 3:** Full loop — read → respond → write → next turn
+
+### After Module 3
+
+> **Audience question:**
+> "When should memory be deleted?
+>  What's dangerous about keeping everything forever?"
+>
+> Expected: stale facts, wrong answers, privacy, storage cost
+
+---
+
+## Demo 2 — Mem0 (2:05–2:20)
+
+```
+python demo/mem0_demo.py
+```
+
+"You just built this from scratch — SQLite, FAISS, extraction, routing.
+69,000 GitHub stars. This is the industry standard for agent memory.
+
+Watch how many lines this takes with Mem0."
+
 ```python
-memory = []
-memory.append({"role": "user", "content": "I have a 401 error"})
-# Gone when the process ends
+from mem0 import MemoryClient
+
+client = MemoryClient(api_key="...")
+
+# After conversation — Mem0 handles extraction, storage, dedup
+client.add(messages, user_id="alex-chen")
+
+# Next session — Mem0 handles routing, retrieval, ranking  
+memories = client.search("401 error", user_id="alex-chen")
 ```
 
-**Level 2 — SQLite (persistent, exact lookup)**
-```python
-# Store conversation turns → retrieve by session ID
-# Survives restarts. Fast for exact queries.
-# Used for: conversational memory
-```
-
-**Level 3 — FAISS vector store (persistent, semantic search)**
-```python
-# Store document embeddings → retrieve by meaning
-# "rate limit" matches "429 error" even without exact words
-# Used for: semantic memory (knowledge base)
-```
-
-> **The Memory Core** is the database. All three levels feed into it.
-> The Memory Manager is the code that reads and writes to it.
+"Same architecture you built. Facts in SQL. Understanding in vectors.
+Extraction by LLM. Retrieval with semantic search + reranking.
+Now you understand what's happening inside."
 
 ---
 
-## Module 1 — Conversational Memory
+## Q&A (2:20–2:30)
 
-**What:** Store each conversation turn in SQLite. Reload it at the start of each turn.
-
-**Without it:** The agent forgets what was said two messages ago.
-
-**With it:** The agent holds context for the entire session.
-
-```
-Run: python modules/01-conversational/module.py
-```
-
-Uncomment one step at a time and re-run after each one.
-
----
-
-## Module 2 — Semantic Memory
-
-**What:** Embed the product knowledge base into FAISS. Retrieve relevant docs per query.
-
-**Without it:** The agent gives generic answers ("please check the docs").
-
-**With it:** The agent answers from actual product knowledge ("free tier is 1k req/day, upgrade to Pro for 100k").
-
-```
-Run: python modules/02-semantic/module.py
-```
-
----
-
-## Module 3 — Memory Manager
-
-**What:** Build the routing logic that decides which memory to read and write per query.
-
-**Without it:** Each memory type is an isolated bucket — the agent uses them all blindly.
-
-**With it:** The right memory is retrieved for the right question. Past tickets surface when relevant. New learnings get written back.
-
-```
-Run: python modules/03-memory-manager/module.py
-```
-
----
-
-## Part 2 — Production Issues
-
-### Context window fills up — summarize
-
-When the conversation grows too long, compress it:
-
-```
-Long conversation (500 turns)
-        │
-        ▼
-  summarize_and_store()
-        │
-        ▼
-  [Summary ID: abc123] "User resolved 401 issue, upgraded to Pro"
-        │
-        ▼
-  expand_summary("abc123")  ← agent calls this only when it needs detail
-```
-
-### Memory bloat — when to forget
-
-Not everything deserves to be stored forever:
-- **Keep:** resolved issues, user preferences, account changes
-- **Forget:** casual greetings, duplicate questions, temporary errors
-
-### Stale memory — timestamps matter
-
-A "free tier = 1k req/day" fact written 6 months ago might be wrong today.
-Always store timestamps. Build expiry policies for facts that change.
-
----
-
-## Q&A
-
-Common questions:
-
-**Q: How is this different from just passing the full conversation history?**
+**Q: How is this different from just passing full conversation history?**
 > Full history fills the context window. Memory retrieval passes only what's relevant — higher signal, lower token cost.
 
-**Q: When should memory operations be deterministic vs agent-triggered?**
-> Deterministic for reliability (always save turns, always load recent history).
-> Agent-triggered for quality (summarize only when the agent judges it's needed).
+**Q: When should memory operations be synchronous vs asynchronous?**
+> Sync for facts — user expects them saved immediately.
+> Async for understanding — needs enough context, don't update identity from one sentence.
 
-**Q: What's the right database for production?**
-> SQLite works up to millions of rows. For scale: Postgres + pgvector, or a dedicated vector DB like Pinecone or Weaviate.
+**Q: What database should I use in production?**
+> SQLite works up to millions of rows. For scale: Postgres + pgvector, or Pinecone/Weaviate for vectors.
+
+**Q: How does the Memory Manager know what type of query it is?**
+> Keyword matching works for demos. In production: small LLM classifier per query. Adds ~50ms but far more accurate.
+
+**Q: Should users be able to delete their memories?**
+> Yes — GDPR requires it. Build a `delete_memories(user_id)` function from day one.
+
+**Q: What happens when extracted memory is wrong?**
+> This is real. Use confidence scores. Flag low-confidence extractions for review. Don't auto-write everything.
+
+---
+
+## Key Takeaways
+
+1. **LLMs are stateless** — your code manages memory, not the LLM
+2. **Facts vs Understanding** — exact lookup vs semantic recall, different stores
+3. **Sync vs Async writes** — facts immediately, understanding after enough context
+4. **Two-terminal test** — if it survives a terminal close, it's long-term memory
+5. **Extraction compresses** — you store what matters, not every word
+6. **Memory Manager routes** — right store for right query, every time
