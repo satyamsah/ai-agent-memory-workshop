@@ -27,6 +27,14 @@
 
 While students run `python check_setup.py`:
 
+> **Before running:** students need a `.env` file with their API key.
+> Tell them:
+> ```
+> cp .env.example .env
+> # then open .env and paste their ANTHROPIC_API_KEY
+> ```
+> Get a key at console.anthropic.com (free tier works for this workshop).
+
 - Introduce yourself
 - Ask: "Who here has built something with an LLM?"
 - Ask: "Who ran into a problem where the agent forgot something?"
