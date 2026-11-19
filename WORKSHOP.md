@@ -272,24 +272,23 @@ why call the LLM again? Cache the answer. Retrieve it by meaning, not exact matc
 ### Semantic cache — the cost saver
 
 ```
-Turn 1: "What's the rate limit on free tier?"
-        → no cache hit → LLM call → "1,000 req/day"
+Turn 6: "What's the rate limit on the free tier?"
+        → no cache hit → LLM call → "100 req/min"
         → SAVE TO CACHE: { question, answer, embedding }
 
-Turn 4: "How many requests per day do I get on free?"
+Turn 7: "What's the rate limit on the free tier?"  ← same question
         → semantic search on cache
-        → HIT — similar meaning to Turn 1 question
+        → HIT — identical question
         → return cached answer instantly
         → ⚡ 0 tokens used, 0ms LLM latency
 ```
 
 Students see in terminal:
 ```
-  [cache miss] calling LLM...
-  Agent: Free tier is 1,000 req/day
+  Agent: Free tier is 100 requests per minute.
 
-  [cache HIT ⚡] returning cached answer (0 tokens)
-  Agent: Free tier is 1,000 req/day
+  ⚡ Cache HIT — 0 tokens, 0ms LLM latency
+  Agent: Free tier is 100 requests per minute.
 ```
 
 **Where cache is stored:**
@@ -305,7 +304,7 @@ Conversation turn:
           ↓
 Claude Haiku extracts:
   Fact:      "Alex uses copy-paste for API keys"        → SQLite (sync)
-  Episodic:  "Nov 18 — 401 fixed, trailing newline"    → SQLite (sync)
+  Episodic:  "401 fixed, trailing newline in copy-pasted key"  → SQLite (sync)
   Understanding: "Alex makes copy-paste errors"        → FAISS (async)
 ```
 
@@ -322,8 +321,8 @@ Claude Haiku extracts:
 [Close terminal]
 
 ─── Session 2 (run the script again) ────────────────
-  Agent: Welcome back Alex. Last time you had a 401 caused
-         by a trailing newline in your key. Same issue today?
+  [Long-term memory loads at session start]
+  Agent greets fresh — but now has context if Alex mentions past issues
 ```
 
 ### Build
@@ -332,7 +331,7 @@ Claude Haiku extracts:
 python modules/02-extraction/module.py
 ```
 
-Uncomment STEP 1 → STEP 2 → STEP 3
+Uncomment STEP 1 → STEP 2 → STEP 3 → STEP 4
 
 **STEP 1:** Extract facts + episodic after each turn → save to SQLite
 **STEP 2:** Extract understanding after each turn → save to FAISS
@@ -415,15 +414,15 @@ python demo/mem0_demo.py
 Watch how many lines this takes with Mem0."
 
 ```python
-from mem0 import MemoryClient
+from mem0 import Memory
 
-client = MemoryClient(api_key="...")
+memory = Memory.from_config(config)  # config: Claude Haiku + FAISS (no Docker needed)
 
-# After conversation — Mem0 handles extraction, storage, dedup
-client.add(messages, user_id="alex-chen")
+# After each turn — Mem0 handles extraction, storage, dedup
+memory.add(messages, user_id="alex-chen")
 
-# Next session — Mem0 handles routing, retrieval, ranking  
-memories = client.search("401 error", user_id="alex-chen")
+# Next session — Mem0 handles routing, retrieval, ranking
+results = memory.search("401 error", user_id="alex-chen", limit=3)
 ```
 
 "Same architecture you built. Facts in SQL. Understanding in vectors.
