@@ -33,7 +33,14 @@ While students run `python check_setup.py`:
 > cp .env.example .env
 > # then open .env and paste their ANTHROPIC_API_KEY
 > ```
-> Get a key at console.anthropic.com (free tier works for this workshop).
+> **Getting an Anthropic API key:**
+> 1. Go to [console.anthropic.com](https://console.anthropic.com)
+> 2. Sign up or log in
+> 3. Click **API Keys** in the left sidebar
+> 4. Click **Create Key** — copy it immediately (shown only once)
+> 5. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
+>
+> Free tier works for this workshop. No credit card required to start.
 
 - Ask: "Who here has built something with an LLM?"
 - Ask: "Who ran into a problem where the agent forgot something?"
