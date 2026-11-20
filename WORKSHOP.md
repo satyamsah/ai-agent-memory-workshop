@@ -81,28 +81,39 @@ You type two messages. The second should only make sense if Claude remembered th
 
 ---
 
-### 1.2 Short-term vs Long-term memory
+### 1.2 What is the context window?
 
-**Short-term — lives during the session, gone when it ends:**
+Every time you call the Claude API, you pass a `messages` list. The context window is the maximum size of that list — measured in **tokens** (roughly 1 token ≈ 1 word).
 
-| Type | What it is | Example |
-|------|-----------|---------|
-| Working memory | The context window — current API call | Everything in `messages` right now |
-| Conversational memory | History passed each turn | Turns 1–N of this session |
-| Semantic cache | Cached Q&A pairs — same question, no LLM call | "rate limit?" → cached answer ⚡ |
+```
+client.messages.create(
+    model="claude-haiku-4-5-20251001",
+    messages=[...],   ← everything here counts toward the limit
+)
+```
 
-**Long-term — survives across sessions, stored in a database:**
+**Everything counts toward the limit:**
+- System prompt
+- Conversation history (every turn so far)
+- Tool outputs
+- Retrieved documents
 
-| Type | What it is | Example |
-|------|-----------|---------|
-| Facts | Simple facts about the user | "Alex is on Pro tier" |
-| Episodic | Specific events with timestamps | "Nov 15 — Alex had 401, trailing newline" |
-| Understanding | Patterns learned over time | "Alex always makes copy-paste errors" |
+Claude Haiku has a **200,000 token** context window (~150,000 words). Sounds huge — but in a long-running agent with many turns, it fills faster than you expect.
 
-> **Key insight from Google's agent memory research:**
-> Facts are exact — look them up in SQL.
-> Understanding is meaning — recall it from a vector store.
-> They must NOT live in the same place.
+**What happens when it overflows:**
+```
+anthropic.BadRequestError: prompt is too long:
+200011 tokens > 200000 maximum
+```
+
+The API throws an error. Your agent crashes. The user loses the conversation.
+
+That's what the first demo shows. And that's why we need memory — to decide what stays in the window and what gets stored elsewhere.
+
+> **Audience question:**
+> "If the context window is 200,000 tokens — why can't we just always pass everything?"
+>
+> Expected: cost (every token costs money), latency (bigger prompt = slower response), and noise (more irrelevant context = worse answers)
 
 ---
 
