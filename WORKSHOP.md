@@ -190,14 +190,28 @@ If the user asks next turn: "What plan is my DevCore account on?" → answer is 
 
 **Understanding → write after enough context (asynchronous)**
 ```
-Turn 3: User fixes 401 — trailing newline again
-Turn 7: User fixes 403 — copy-pasted scope name wrong
-Turn 12: User fixes 401 — trailing newline again
-         ↓
-Pattern emerges: "Alex makes copy-paste errors with credentials"
-         ↓
-Extract AFTER session, not during — don't update identity from one sentence
+Session 1, Turn 3:
+  User: "Fixed it — there was a trailing newline when I copy-pasted the key."
+  → Agent notes: possible copy-paste issue. Too early to save anything.
+
+Session 1, Turn 7:
+  User: "Got a 403 now — oh wait, I copy-pasted the scope name and got extra spaces."
+  → Agent notes: second copy-paste error this session. Pattern starting to form.
+
+Session 2, Turn 4:
+  User: "401 again — trailing newline in the key. Same as last time."
+  → Pattern confirmed across sessions: "Alex makes copy-paste errors with credentials"
+
+  After session ends → extraction runs asynchronously:
+  LLM reads full session → extracts:
+  understanding: "Alex consistently makes copy-paste errors when setting up credentials"
+  → saved to FAISS
 ```
+
+Why async — not after every turn:
+- One sentence is noise. Repeated pattern across turns is signal.
+- Extraction is expensive (LLM call) — keep it off the hot path.
+- Don't update someone's identity from "maybe I'll try Go today."
 
 > **Audience question:**
 > "Why is it dangerous to update understanding from a single sentence?
