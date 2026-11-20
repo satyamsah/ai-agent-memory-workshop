@@ -28,7 +28,8 @@ console = Console()
 def call(client, messages):
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=120,
+        max_tokens=80,
+        system="You are a helpful API support agent. Reply in plain text only — no markdown, no headers, no bullet points. 2 sentences max.",
         messages=messages,
     )
     return response.content[0].text.strip()
