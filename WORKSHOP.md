@@ -34,11 +34,10 @@ While students run `python check_setup.py`:
 > # then open .env and paste their ANTHROPIC_API_KEY
 > ```
 > **Getting an Anthropic API key:**
-> 1. Go to [console.anthropic.com](https://console.anthropic.com)
+> 1. Go directly to [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
 > 2. Sign up or log in
-> 3. Click **API Keys** in the left sidebar
-> 4. Click **Create Key** — copy it immediately (shown only once)
-> 5. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
+> 3. Click **Create Key** — copy it immediately (shown only once)
+> 4. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
 >
 > Free tier works for this workshop. No credit card required to start.
 
