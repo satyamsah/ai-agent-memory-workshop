@@ -106,22 +106,25 @@ You type two messages. The second should only make sense if Claude remembered th
 
 ---
 
-### 1.3 Where memory lives
+### 1.3 Short-term vs Long-term — with examples
 
-```
-SHORT-TERM                          LONG-TERM
-──────────────────────────          ──────────────────────────────────
-Context window (Claude API)         SQLite
-  current messages list               → facts: "Alex on Pro tier"
-                                       → episodic: "Nov 15 — 401 issue"
-Conversation turns (SQLite)         
-  this session only                 FAISS vector store
-                                       → understanding: "Alex copy-pastes badly"
-Semantic cache (SQLite + FAISS)        → semantic search across all memories
-  within session
-```
+**Short-term memory — exists only while you're talking:**
 
-**The two-terminal rule:**
+| Type | Example |
+|------|---------|
+| Working memory | You said "I have a 401 error" two lines ago — the agent knows this right now |
+| Conversational memory | The agent remembers everything from this session — but close the terminal, it's gone |
+| Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
+
+**Long-term memory — survives after the terminal closes:**
+
+| Type | Example |
+|------|---------|
+| Facts | "Alex is on the free plan" — remembered next session, next week |
+| Episodic | "Nov 19 — Alex had a 401 caused by a trailing newline in their key" |
+| Understanding | "Alex always makes copy-paste errors with credentials" — pattern learned over many sessions |
+
+**The two-terminal test:**
 - Close the terminal → short-term is gone
 - Open a new terminal → long-term is still there
 
