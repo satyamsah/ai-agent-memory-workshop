@@ -108,7 +108,7 @@ anthropic.BadRequestError: prompt is too long:
 
 The API throws an error. Your agent crashes. The user loses the conversation.
 
-That's what the first demo shows. And that's why we need memory — to decide what stays in the window and what gets stored elsewhere.
+That's what `demo/context_window.py` shows — we'll run it right after this section. And that's why we need memory — to decide what stays in the window and what gets stored elsewhere.
 
 > **Audience question:**
 > "If the context window is 200,000 tokens — why can't we just always pass everything?"
