@@ -119,12 +119,13 @@ That's what `demo/context_window.py` shows — we'll run it right after this sec
 
 ### 1.3 Short-term vs Long-term — with examples
 
+![Forms of Agent Memory](assets/forms_of_agent_memory.png)
+
 **Short-term memory — exists only while you're talking:**
 
 | Type | Example |
 |------|---------|
-| Working memory | The `messages` list in the current API call — has a size limit. Fill it up → API throws an error (we'll show this in the demo) |
-| Conversational memory | All turns this session, loaded from SQLite — survives the context limit because it's on disk |
+| Conversational memory | All turns this session, loaded from SQLite — survives context overflow because it's on disk |
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
 **Long-term memory — survives after the terminal closes:**
