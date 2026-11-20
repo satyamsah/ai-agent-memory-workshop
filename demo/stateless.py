@@ -22,7 +22,7 @@ import anthropic
 
 load_dotenv()
 
-console = Console()
+console = Console(width=80)
 
 
 def call(client, messages):
