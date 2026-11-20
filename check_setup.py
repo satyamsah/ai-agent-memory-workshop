@@ -125,6 +125,37 @@ try:
 except Exception as e:
     fail("FAISS vector store", str(e)[:80])
 
+# ── SQLite DB setup ───────────────────────────────────────────────────────────
+try:
+    import sqlite3
+    conn = sqlite3.connect("memory_workshop.db")
+    conn.execute("""CREATE TABLE IF NOT EXISTS turns (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        session   TEXT NOT NULL,
+        role      TEXT NOT NULL,
+        content   TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS memories (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id   TEXT NOT NULL,
+        type      TEXT NOT NULL,
+        content   TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS cache (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id   TEXT NOT NULL,
+        question  TEXT NOT NULL,
+        answer    TEXT NOT NULL,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )""")
+    conn.commit()
+    conn.close()
+    ok("SQLite DB", "memory_workshop.db — tables: turns, memories, cache")
+except Exception as e:
+    fail("SQLite DB", str(e)[:80])
+
 # ── Results ───────────────────────────────────────────────────────────────────
 console.print()
 tbl = Table(show_header=False, box=None, padding=(0, 1))
@@ -144,13 +175,15 @@ warnings = [c for c in checks if c[0] == "?"]
 if not failures:
     console.print(Panel(
         "[bold green]All checks passed — you're ready for the workshop![/bold green]\n\n"
-        "Start with the demo:\n"
-        "  [bold]python demo/context_window.py[/bold]\n\n"
+        "Start with:\n"
+        "  [bold]python demo/stateless.py[/bold]\n"
+        "  [bold]python demo/context_window_crash.py[/bold]\n\n"
         "Then the modules in order:\n"
         "  [bold]python modules/01-conversational/module.py[/bold]\n"
         "  [bold]python modules/02-extraction/module.py[/bold]\n"
         "  [bold]python modules/03-memory-manager/module.py[/bold]\n\n"
-        "Final demo:\n"
+        "Final demos:\n"
+        "  [bold]python demo/context_window_recovery.py[/bold]\n"
         "  [bold]python demo/mem0_demo.py[/bold]",
         border_style="green",
         title="Ready",

@@ -13,12 +13,13 @@
 |------|-------|--------|
 | 0:00–0:15 | Setup & welcome | Setup |
 | 0:15–0:40 | Part 1 — Why agents need memory | Talk + Q&A |
-| 0:40–0:55 | Demo — Context window crash + recovery | Demo |
-| 0:55–1:15 | Module 1 — Conversational memory | Hands-on |
-| 1:15–1:25 | ☕ Break | — |
-| 1:25–1:45 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
-| 1:45–2:05 | Module 3 — Memory Manager routing | Hands-on |
-| 2:05–2:20 | Demo 2 — Mem0 (industry standard) | Demo |
+| 0:40–0:50 | Demo — Context window crash | Demo |
+| 0:50–1:10 | Module 1 — Conversational memory | Hands-on |
+| 1:10–1:20 | ☕ Break | — |
+| 1:20–1:40 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
+| 1:40–1:50 | Demo — Memory Manager recovery | Demo |
+| 1:50–2:10 | Module 3 — Memory Manager routing | Hands-on |
+| 2:10–2:20 | Demo — Mem0 (industry standard) | Demo |
 | 2:20–2:30 | Q&A + wrap up | Q&A |
 
 ---
@@ -26,6 +27,20 @@
 ## Setup (0:00–0:15)
 
 While students run `python check_setup.py`:
+
+> **Before running anything:** students must activate the virtual environment.
+> Tell them:
+> ```
+> cd memory-workshop
+> source .venv/bin/activate    # Mac/Linux
+> .venv\Scripts\activate       # Windows
+> ```
+> Then verify:
+> ```
+> python check_setup.py
+> ```
+>
+> **If they don't see `(.venv)` in their prompt — nothing will work.**
 
 > **Before running:** students need a `.env` file with their API key.
 > Tell them:
@@ -189,29 +204,23 @@ If the user asks next turn: "What plan is my DevCore account on?" → answer is 
 ```
 
 **Understanding → write after enough context (asynchronous)**
+
 ```
-Session 1, Turn 3:
-  User: "Fixed it — there was a trailing newline when I copy-pasted the key."
-  → Agent notes: possible copy-paste issue. Too early to save anything.
+Session 1: "Help me test the payment service — mock the Stripe client first"
+           → agent saves nothing yet, one session is not a pattern
 
-Session 1, Turn 7:
-  User: "Got a 403 now — oh wait, I copy-pasted the scope name and got extra spaces."
-  → Agent notes: second copy-paste error this session. Pattern starting to form.
+Session 2: "Same as before — mock the DB client, then run the integration test"
+           → extract_memories() runs → saves to FAISS:
+              "Alex mocks external clients before running integration tests"
 
-Session 2, Turn 4:
-  User: "401 again — trailing newline in the key. Same as last time."
-  → Pattern confirmed across sessions: "Alex makes copy-paste errors with credentials"
-
-  After session ends → extraction runs asynchronously:
-  LLM reads full session → extracts:
-  understanding: "Alex consistently makes copy-paste errors when setting up credentials"
-  → saved to FAISS
+Session 3: "Help me test the auth service"
+           → agent retrieves from FAISS:
+              "Alex mocks external clients before running integration tests"
+           → agent responds:
+              "I'll mock the OAuth client first, then we run the integration test"
 ```
 
-Why async — not after every turn:
-- One sentence is noise. Repeated pattern across turns is signal.
-- Extraction is expensive (LLM call) — keep it off the hot path.
-- Don't update someone's identity from "maybe I'll try Go today."
+One session is a preference. Two sessions is a pattern. Session 3 — the agent already knows.
 
 > **Audience question:**
 > "Why is it dangerous to update understanding from a single sentence?
@@ -221,85 +230,90 @@ Why async — not after every turn:
 
 ---
 
-## Demo — Context Window Crash + Recovery (0:40–0:55)
+## Demo — Context Window Crash (0:40–0:50)
 
 ```
-python demo/context_window.py
+python demo/context_window_crash.py
+```
+
+**Copy-paste these questions one at a time:**
+
+```
+1.  Hi, I'm getting a 401 Unauthorized error on all my API calls.
+2.  I am passing the key correctly in the Authorization header as Bearer token.
+3.  The key shows as active in the dashboard. I regenerated it last week.
+4.  I updated the key in my local .env but not sure about the production server.
+5.  I updated it on the server and restarted. Still getting 401.
+6.  Fixed the newline issue. Now getting 403 Forbidden on the /data endpoint.
+7.  How do I add write scope to my existing API key?
+8.  Done. Now hitting 429 Too Many Requests. I'm on the free tier.
+9.  My code doesn't handle 429 — it just crashes. What's the right pattern?
+10. What happens if I exceed the daily request limit on the free tier?
+    ← crash happens around here
 ```
 
 **What to say while running:**
 
-"This is working memory — the context window. Watch the bar fill up as we talk.
-At 75% — yellow warning. At 90% — the API throws a real error.
-This is not simulated. This is what your users hit in production.
+"Watch the bar fill up as we talk. At 75% — yellow warning.
+No recovery. No Memory Manager. Just the crash.
+This is what your users hit in production."
 
-Watch what happens next — the Memory Manager kicks in.
-It compresses the old turns into a summary.
-Context drops. Conversation continues.
-The agent didn't lose the thread — it summarized it."
+Stop after the crash. Don't show recovery yet.
 
-**After the demo:**
-> "This is summary memory — the 6th type. Compression of old conversations.
->  The agent didn't forget — it remembered the shape, not every word."
+> "This is the problem. Now let's build the fix."
 
 ---
 
-## Module 1 — Conversational Memory (0:55–1:15)
+## Module 1 — Conversational Memory (0:50–1:10)
 
 ### Theory (3 mins)
 
-"You just saw the context window fill up. That's working memory — the context window itself.
+"You just saw the context window fill up. Without memory, every API call is fresh.
+The agent forgets what you said two turns ago.
+Close the terminal — it forgets everything.
 
-Now we're going to build conversational memory — the turns of this session stored in SQLite.
-
-Without it: agent forgets mid-conversation.
-With it: agent holds full context for the session.
-
-And here's the key — because it's on disk, it survives the terminal closing.
-That's the bridge between short-term and long-term."
-
-### The two-terminal moment
-
-**Before adding memory:**
-```
-Terminal 1:
-  You: I have a 401 error
-  You: Same issue as last week
-  Agent: I don't have any record of previous interactions  ← fails
-
-[Close terminal. Open new terminal.]
-
-Terminal 2:
-  You: What was my issue last time?
-  Agent: I have no context from previous sessions  ← blank slate
-```
-
-**After adding memory:**
-```
-Terminal 1:
-  You: I have a 401 error
-  You: Fixed it — trailing newline
-  [Memory saved to SQLite]
-
-[Close terminal. Open new terminal.]
-
-Terminal 2:
-  You: What was my issue last time?
-  Agent: Last session you had a 401 error caused by a trailing newline
-         in your API key  ← remembers
-```
+We're going to fix that. We'll store every turn to disk.
+When you reopen the terminal — the agent remembers."
 
 ### Build
 
+**Step 1 — Have a conversation:**
+```
+python modules/01-conversational/module.py
+```
+Use the suggested questions. Chat with the agent. Then quit.
+
+**Step 2 — Open Terminal 2, ask about the previous session:**
+```
+python modules/01-conversational/module.py
+```
+Ask: "What was my issue last time?" — agent has no idea. Blank slate.
+
+> "This is the problem. Every run is fresh. Nothing persists."
+
+**Step 3 — Create the DB and see the schema:**
+```
+python modules/01-conversational/setup_db.py
+```
+Shows the empty `turns` table — session, role, content, timestamp. No rows yet.
+
+"This file lives on disk. It survives terminal close. This is where memory will live."
+
+**Step 4 — Uncomment STEP 1 → STEP 2, re-run:**
 ```
 python modules/01-conversational/module.py
 ```
 
-Uncomment STEP 1 → STEP 2 → STEP 3
+**STEP 1:** Save every turn (sync — write immediately)
+**STEP 2:** Load history before each call
 
-**STEP 1:** Create SQLite `turns` table
-**STEP 2:** Save every turn (sync — write immediately)
-**STEP 3:** Load history before each call
+Have the conversation again. Quit. Open a new terminal and run again.
+
+```
+Terminal 2 — python modules/01-conversational/module.py
+  You: What was my issue last time?
+  Agent: Last session you had a 401 error caused by a trailing newline  ← remembers
+```
 
 ### After Module 1
 
@@ -312,92 +326,82 @@ Uncomment STEP 1 → STEP 2 → STEP 3
 
 ---
 
-## Module 2 — Long-term Memory Extraction + Semantic Cache (1:25–1:45)
+## Module 2 — Long-term Memory Extraction + Semantic Cache (1:20–1:40)
 
 ### Theory (3 mins)
 
-"Module 1 saves every word. That's not how humans remember.
-
-A support agent doesn't remember every word of a call.
-They remember: 'Alex called Nov 15, had a 401, trailing newline, fixed.'
-That's episodic memory — a specific event, compressed, with a timestamp.
-
-They also know: 'Alex always makes copy-paste errors.'
-That's understanding — a pattern across many sessions.
-
-We're going to build both. Claude reads the conversation and extracts what matters.
-
-And one more thing — semantic cache. If the same question gets asked twice,
-why call the LLM again? Cache the answer. Retrieve it by meaning, not exact match."
-
-### Semantic cache — the cost saver
-
-```
-Turn 6: "What's the rate limit on the free tier?"
-        → no cache hit → LLM call → "100 req/min"
-        → SAVE TO CACHE: { question, answer, embedding }
-
-Turn 7: "What's the rate limit on the free tier?"  ← same question
-        → semantic search on cache
-        → HIT — identical question
-        → return cached answer instantly
-        → ⚡ 0 tokens used, 0ms LLM latency
-```
-
-Students see in terminal:
-```
-  Agent: Free tier is 100 requests per minute.
-
-  ⚡ Cache HIT — 0 tokens, 0ms LLM latency
-  Agent: Free tier is 100 requests per minute.
-```
-
-**Where cache is stored:**
-- SQLite → the Q&A pair (question text + answer text)
-- FAISS → the question embedding (for semantic similarity search)
-
-### What gets extracted
-
-```
-Conversation turn:
-  User: "Fixed it — was a trailing newline in the key I copy-pasted"
-  Agent: "Great, that's a common issue. Always check for whitespace."
-          ↓
-Claude Haiku extracts:
-  Fact:      "Alex uses copy-paste for API keys"        → SQLite (sync)
-  Episodic:  "401 fixed, trailing newline in copy-pasted key"  → SQLite (sync)
-  Understanding: "Alex makes copy-paste errors"        → FAISS (async)
-```
-
-### The cross-session moment
-
-```
-─── Session 1 (run the script) ──────────────────────
-  You: Hi I'm getting a 401 error
-  You: Fixed it, was a trailing newline
-  [Memory extracted and saved]
-  ✓ Fact: "Alex had 401 — trailing newline"
-  ✓ Understanding: "Alex makes copy-paste errors"
-
-[Close terminal]
-
-─── Session 2 (run the script again) ────────────────
-  [Long-term memory loads at session start]
-  Agent greets fresh — but now has context if Alex mentions past issues
-```
+- Module 1 saves every word — that's not how humans remember
+- Episodic: "Alex called Nov 15, had a 401, trailing newline, fixed" — specific event, compressed, timestamped
+- Understanding: "Alex always makes copy-paste errors" — pattern across many sessions
+- We'll build both: Claude reads each turn and extracts what matters
+- Semantic cache: same question asked twice → return cached answer, 0 tokens, 0ms LLM latency
 
 ### Build
 
+**Step 1 — Add two new tables to the existing DB:**
+```
+python modules/02-extraction/setup_db.py
+```
+Adds `memories` and `cache` to `memory_workshop.db` (already created in Module 1). Shows both schemas — 0 rows.
+
+**Step 2 — Run without memory:**
 ```
 python modules/02-extraction/module.py
 ```
+Use the suggested questions. Chat with the agent. Quit.
 
-Uncomment STEP 1 → STEP 2 → STEP 3 → STEP 4
+> "No extraction yet. The agent answered but remembered nothing."
 
-**STEP 1:** Extract facts + episodic after each turn → save to SQLite
-**STEP 2:** Extract understanding after each turn → save to FAISS
-**STEP 3:** Add semantic cache — check cache before LLM call, save after
-**STEP 4:** Load long-term memory at session start
+**Step 3 — Uncomment STEP 1, re-run:**
+```
+python modules/02-extraction/module.py
+```
+STEP 1 extracts **facts** and **episodic** memories — both saved to the `memories` table with `type = fact` or `type = episodic`. After each turn you will see:
+```
+  → saved fact → memories table: Alex uses Python SDK
+  → saved episodic → memories table: 401 fixed, trailing newline in copy-pasted key
+```
+Quit. Check the DB:
+```
+sqlite3 memory_workshop.db "SELECT * FROM memories;"
+```
+
+**Step 4 — Uncomment STEP 2, re-run:**
+```
+python modules/02-extraction/module.py
+```
+Now understanding (patterns) is also extracted → saved to FAISS. After enough signal:
+```
+  → saved understanding: Alex makes copy-paste errors with credentials
+```
+
+**Step 5 — Uncomment STEP 3, re-run. Ask question 6, then question 7 (identical):**
+```
+python modules/02-extraction/module.py
+```
+Turn 6: LLM call → answer saved to cache
+
+Turn 7: same question → cache hit:
+```
+  ⚡ Cache HIT — 0 tokens, 0ms LLM latency
+  Agent: Free tier is 100 requests per minute.
+```
+Check the cache table:
+```
+sqlite3 memory_workshop.db "SELECT * FROM cache;"
+```
+
+**Step 6 — Delete the `long_term = []` line in STEP 4, quit, open a new terminal, re-run:**
+```
+Terminal 2 — python modules/02-extraction/module.py
+```
+Long-term memories load at session start:
+```
+  [green] Loaded 2 long-term memories for alex-chen
+  [fact] Alex uses copy-paste for API keys
+  [episodic] 401 fixed, trailing newline in copy-pasted key
+```
+The agent now has context before you say a word.
 
 ### After Module 2
 
@@ -410,7 +414,47 @@ Uncomment STEP 1 → STEP 2 → STEP 3 → STEP 4
 
 ---
 
-## Module 3 — Memory Manager Routing (1:45–2:05)
+## Demo — Memory Manager Recovery (1:40–1:50)
+
+Same conversation as the crash demo — now with the Memory Manager.
+
+```
+python demo/context_window_recovery.py
+```
+
+**Copy-paste these questions one at a time:**
+
+```
+1.  Hi, I'm getting a 401 Unauthorized error on all my API calls.
+2.  I am passing the key correctly in the Authorization header as Bearer token.
+3.  The key shows as active in the dashboard. I regenerated it last week.
+4.  I updated the key in my local .env but not sure about the production server.
+    ← compression triggers here — open context_window_demo.db and run:
+       SELECT * FROM context_turns;
+5.  I updated it on the server and restarted. Still getting 401.
+6.  Fixed the newline issue. Now getting 403 Forbidden on the /data endpoint.
+7.  How do I add write scope to my existing API key?
+8.  Done. Now hitting 429 Too Many Requests. I'm on the free tier.
+    ← compression triggers again — check the DB, 1 summary row replaces all 8
+9.  My code doesn't handle 429 — it just crashes. What's the right pattern?
+10. What happens if I exceed the daily request limit on the free tier?
+11. Can I get a temporary rate limit increase while I wait for Pro?
+12. Are there different API endpoints for different regions? Seeing high latency.
+```
+
+**What to say:**
+
+"You just built LLM extraction — Claude reads turns and pulls out what matters.
+That's exactly what the Memory Manager uses to compress.
+Watch the same crash scenario — but now every 4 turns, old turns are summarized and deleted.
+Open `context_window_demo.db` after compression — you'll see one summary row where 8 rows used to be."
+
+> "The agent didn't forget — it remembered the shape, not every word.
+>  Your extraction code is what makes this possible."
+
+---
+
+## Module 3 — Memory Manager Routing (1:50–2:10)
 
 ### Theory (3 mins)
 

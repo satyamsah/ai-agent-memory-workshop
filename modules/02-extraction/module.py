@@ -21,6 +21,8 @@ THE CROSS-SESSION MOMENT:
              a 401 caused by a trailing newline. Same issue today?"
 
 RUN:
+  source .venv/bin/activate                            ← activate first
+  python modules/02-extraction/setup_db.py             ← run this first
   python modules/02-extraction/module.py
 """
 
@@ -56,25 +58,30 @@ SYSTEM_PROMPT = """You are a DevCore API support agent. DevCore is a developer A
 Help engineers debug API issues. Be concise — 2-3 sentences max.
 When you have context about the user from past conversations, use it naturally.
 If you know their name, tier, SDK, or past issues — reference them.
+Do not invent pricing, tier names, or specific limits you are not told about.
 """
 
 EXTRACTION_PROMPT = """You are a memory extractor. Read this conversation turn and extract memories worth keeping.
 
 Return a JSON object with this exact structure:
-{
+{{
   "facts": ["fact1", "fact2"],
   "episodic": ["event1", "event2"],
   "understanding": ["pattern1", "pattern2"]
-}
+}}
 
-facts: Simple facts about the user. "Alex uses Python SDK", "Alex is on free tier"
-episodic: Specific events with enough detail to recall later. "Alex had 401 error caused by trailing newline in copy-pasted key"
-understanding: Patterns or tendencies observed. "Alex makes copy-paste errors with credentials"
+Definitions (extract from the conversation, do not copy these examples):
+- facts: Simple, stable facts about the user. Example: "Alex uses Python SDK", "Alex is on free tier"
+- episodic: Specific events with detail to recall later. Example: "Alex had 401 error caused by trailing newline in copy-pasted key"
+- understanding: Patterns or tendencies across sessions. Example: "Alex makes copy-paste errors with credentials"
 
 Rules:
-- Only extract if there is clear signal. Empty lists are fine.
-- Do not extract generic advice or agent responses.
-- Do not update understanding from a single weak signal — only strong, clear patterns.
+- Only extract information ABOUT THE USER — their setup, errors they hit, things they did or discovered.
+- Do NOT extract platform facts, rate limits, or general API knowledge.
+- Do NOT extract what the agent said, suggested, or recommended.
+- Do NOT extract statements like "user is still experiencing X" — only concrete resolutions or discoveries.
+- Only extract understanding after a clear pattern, not a single incident.
+- Empty lists are fine and often correct.
 - Return valid JSON only. No explanation.
 
 Conversation turn:
@@ -85,15 +92,15 @@ Existing memories for context:
 {existing_memories}
 """
 
-# Pre-written conversation — same as Module 1 so students see the difference
-CONVERSATION = [
+# Suggested questions — same as Module 1 so students see extraction kick in
+SUGGESTED_QUESTIONS = [
     "Hi, I'm getting a 401 Unauthorized error on all my API calls.",
     "I regenerated the key last week. It shows as active in the dashboard.",
     "Still getting 401. Any other ideas?",
     "Found it — there was a trailing newline when I copy-pasted the key.",
     "Fixed now. Thanks. I'm using the Python SDK by the way.",
     "What's the rate limit on the free tier?",
-    "What's the rate limit on the free tier?",  # duplicate — will hit cache
+    "What's the rate limit on the free tier?",  # duplicate — hits cache on STEP 3
 ]
 
 
@@ -178,64 +185,79 @@ def save_memory(user_id: str, memory_type: str, content: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 1 — Extract facts + episodic memories after each turn → SQLite
 #
-# Remove the `pass` and uncomment the function body below.
-# Then re-run. Watch facts and episodic memories appear in the memory table.
+# Uncomment the function body below (remove the `pass` version above it).
+# Re-run. After each turn you will see:
+#   → saved fact: Alex uses Python SDK
+#   → saved episodic: 401 fixed, trailing newline in copy-pasted key
+# Query the DB: SELECT * FROM memories;
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
-    pass
-
 # def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
-#     """Claude reads the turn and extracts memories worth keeping."""
-#     api_key = os.getenv("ANTHROPIC_API_KEY")
-#     auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
-#     base_url = os.getenv("ANTHROPIC_BASE_URL")
-#
-#     client = anthropic.Anthropic(
-#         api_key=api_key or "dummy",
-#         auth_token=auth_token if not api_key else None,
-#         base_url=base_url,
-#     )
-#
-#     existing_summary = "\n".join(
-#         f"[{m['type']}] {m['content']}" for m in existing
-#     ) or "None yet"
-#
-#     prompt = EXTRACTION_PROMPT.format(
-#         user_message=user_msg,
-#         agent_message=agent_msg,
-#         existing_memories=existing_summary,
-#     )
-#
-#     response = client.messages.create(
-#         model="claude-haiku-4-5-20251001",
-#         max_tokens=300,
-#         messages=[{"role": "user", "content": prompt}],
-#     )
-#
-#     try:
-#         extracted = json.loads(response.content[0].text.strip())
-#     except Exception:
-#         return
-#
-#     saved = []
-#     for fact in extracted.get("facts", []):
-#         save_memory(user_id, "fact", fact)
-#         saved.append(("[cyan]fact[/cyan]", fact))
-#     for event in extracted.get("episodic", []):
-#         save_memory(user_id, "episodic", event)
-#         saved.append(("[yellow]episodic[/yellow]", event))
-#
-#     if saved:
-#         for label, content in saved:
-#             console.print(f"  [dim]→ saved {label}: {content}[/dim]")
+#     pass
+
+def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
+    """Claude reads the turn and extracts memories worth keeping."""
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+    base_url = os.getenv("ANTHROPIC_BASE_URL")
+
+    client = anthropic.Anthropic(
+        api_key=api_key or "dummy",
+        auth_token=auth_token if not api_key else None,
+        base_url=base_url,
+    )
+
+    existing_summary = "\n".join(
+        f"[{m['type']}] {m['content']}" for m in existing
+    ) or "None yet"
+
+    prompt = EXTRACTION_PROMPT.format(
+        user_message=user_msg,
+        agent_message=agent_msg,
+        existing_memories=existing_summary,
+    )
+
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    raw = response.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```", 2)[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+        raw = raw.strip()
+
+    console.print(f"  [dim]  LLM raw: {raw[:120]}[/dim]")
+
+    try:
+        extracted = json.loads(raw)
+    except Exception:
+        return []
+
+    saved = []
+    for fact in extracted.get("facts", []):
+        save_memory(user_id, "fact", fact)
+        saved.append(("[cyan]fact → memories table[/cyan]", fact))
+    for event in extracted.get("episodic", []):
+        save_memory(user_id, "episodic", event)
+        saved.append(("[yellow]episodic → memories table[/yellow]", event))
+    for pattern in extracted.get("understanding", []):
+        save_understanding(pattern)
+        saved.append(("[magenta]understanding → FAISS[/magenta]", pattern))
+
+    return saved
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 2 — Extract understanding (patterns) → FAISS vector store
 #
-# Remove the `pass` lines and uncomment the function body below.
-# Then re-run. Watch understanding appear in FAISS.
+# Uncomment save_understanding + load_understanding below (remove the pass stubs).
+# Also uncomment the 2-line block at the bottom of extract_and_save (marked Step 2).
+# Re-run. After enough signal you will see:
+#   → saved understanding: Alex makes copy-paste errors with credentials
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def save_understanding(content: str):
@@ -244,111 +266,112 @@ def save_understanding(content: str):
 def load_understanding(query: str, k: int = 2) -> list:
     return []
 
-# def save_understanding(content: str):
-#     """Save a pattern/understanding to FAISS vector store."""
-#     from langchain_community.vectorstores import FAISS
-#     from langchain_huggingface import HuggingFaceEmbeddings
-#
-#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-#
-#     if os.path.exists(FAISS_PATH):
-#         store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
-#         store.add_texts([content])
-#     else:
-#         store = FAISS.from_texts([content], embedder)
-#
-#     store.save_local(FAISS_PATH)
-#     console.print(f"  [dim]→ saved [magenta]understanding[/magenta]: {content}[/dim]")
-#
-#
-# def load_understanding(query: str, k: int = 2) -> list:
-#     """Retrieve understanding relevant to this query."""
-#     from langchain_community.vectorstores import FAISS
-#     from langchain_huggingface import HuggingFaceEmbeddings
-#
-#     if not os.path.exists(FAISS_PATH):
-#         return []
-#
-#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-#     store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
-#     docs = store.similarity_search(query, k=k)
-#     return [doc.page_content for doc in docs]
+def save_understanding(content: str):
+    """Save a pattern/understanding to FAISS vector store."""
+    from langchain_community.vectorstores import FAISS
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+    if os.path.exists(FAISS_PATH):
+        store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
+        store.add_texts([content])
+    else:
+        store = FAISS.from_texts([content], embedder)
+
+    store.save_local(FAISS_PATH)
+    console.print(f"  [dim]→ saved [magenta]understanding[/magenta]: {content}[/dim]")
 
 
-# ── Also update extract_and_save to save understanding (after Step 2) ─────────
-# After uncommenting Step 2, add this inside extract_and_save:
-#
-#     for pattern in extracted.get("understanding", []):
-#         save_understanding(pattern)
+def load_understanding(query: str, k: int = 2) -> list:
+    """Retrieve understanding relevant to this query."""
+    from langchain_community.vectorstores import FAISS
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    if not os.path.exists(FAISS_PATH):
+        return []
+
+    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
+    docs = store.similarity_search(query, k=k)
+    return [doc.page_content for doc in docs]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3 — Semantic cache: check before LLM call, save after
 #
-# Remove the `return None` / `pass` and uncomment the function bodies.
-# Then re-run. Watch Turn 7 hit the cache instead of calling the LLM.
+# Uncomment check_cache + save_to_cache below (remove the return None / pass stubs).
+# Re-run. Ask question 6, then question 7 (identical). You will see:
+#   Turn 6: LLM call → answer saved to cache
+#   Turn 7: ⚡ Cache HIT — 0 tokens, 0ms LLM latency
+# Query the DB: SELECT * FROM cache;
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def check_cache(user_id: str, question: str, threshold: float = 0.85):
     return None
 
-# def check_cache(user_id: str, question: str, threshold: float = 0.85):
-#     """Check if a semantically similar question was already answered."""
-#     from langchain_community.vectorstores import FAISS
-#     from langchain_huggingface import HuggingFaceEmbeddings
-#
-#     cache_faiss_path = f"cache_faiss_{user_id}"
-#     if not os.path.exists(cache_faiss_path):
-#         return None
-#
-#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-#     store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
-#     results = store.similarity_search_with_score(question, k=1)
-#
-#     if results and results[0][1] < (1 - threshold):
-#         cached_q = results[0][0].page_content
-#         conn = sqlite3.connect(DB_PATH)
-#         row = conn.execute(
-#             "SELECT answer FROM cache WHERE user_id=? AND question=? LIMIT 1",
-#             (user_id, cached_q)
-#         ).fetchone()
-#         conn.close()
-#         if row:
-#             return row[0]
-#     return None
+def check_cache(user_id: str, question: str, threshold: float = 0.85):
+    """Check if a semantically similar question was already answered."""
+    from langchain_community.vectorstores import FAISS
+    from langchain_huggingface import HuggingFaceEmbeddings
 
+    cache_faiss_path = f"cache_faiss_{user_id}"
+    if not os.path.exists(cache_faiss_path):
+        return None
 
-def save_to_cache(user_id: str, question: str, answer: str):
-    pass
+    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
+    results = store.similarity_search_with_score(question, k=1)
+
+    if results and results[0][1] < (1 - threshold):
+        cached_q = results[0][0].page_content
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT answer FROM cache WHERE user_id=? AND question=? LIMIT 1",
+            (user_id, cached_q)
+        ).fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    return None
+
 
 # def save_to_cache(user_id: str, question: str, answer: str):
-#     """Save a Q&A pair to cache — SQLite for the answer, FAISS for the question embedding."""
-#     from langchain_community.vectorstores import FAISS
-#     from langchain_huggingface import HuggingFaceEmbeddings
-#
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.execute(
-#         "INSERT INTO cache (user_id, question, answer) VALUES (?, ?, ?)",
-#         (user_id, question, answer)
-#     )
-#     conn.commit()
-#     conn.close()
-#
-#     cache_faiss_path = f"cache_faiss_{user_id}"
-#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-#     if os.path.exists(cache_faiss_path):
-#         store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
-#         store.add_texts([question])
-#     else:
-#         store = FAISS.from_texts([question], embedder)
-#     store.save_local(cache_faiss_path)
+#     pass
+
+def save_to_cache(user_id: str, question: str, answer: str):
+    """Save a Q&A pair to cache — SQLite for the answer, FAISS for the question embedding."""
+    from langchain_community.vectorstores import FAISS
+    from langchain_huggingface import HuggingFaceEmbeddings
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO cache (user_id, question, answer) VALUES (?, ?, ?)",
+        (user_id, question, answer)
+    )
+    conn.commit()
+    conn.close()
+
+    cache_faiss_path = f"cache_faiss_{user_id}"
+    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    if os.path.exists(cache_faiss_path):
+        store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
+        store.add_texts([question])
+    else:
+        store = FAISS.from_texts([question], embedder)
+    store.save_local(cache_faiss_path)
+    return True
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — Load long-term memory at session start
 #
-# Find the comment [STEP 4] in run() below and uncomment those lines.
-# Then re-run in a NEW terminal — the agent will remember Alex.
+# Find [STEP 4] in run() below and uncomment those lines.
+# Quit, open a NEW terminal, re-run. You will see:
+#   ✓ Loaded 2 long-term memories for alex-chen
+#   [fact] Alex uses Python SDK
+#   [episodic] 401 fixed, trailing newline in copy-pasted key
+# The agent now has context before you say a word.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
@@ -437,11 +460,11 @@ def run():
     console.print()
 
     # ── [STEP 4] Load long-term memories at session start ─────────────────────
-    # Uncomment these lines after Steps 1-3 are working.
-    # Then run in a NEW terminal to see the cross-session moment.
-    long_term = []
-    # long_term = load_long_term_memories(USER_ID)
-    # understanding = load_understanding("user background and history")
+    # Remove the `long_term = []` line below to activate.
+    # Then quit, open a NEW terminal, and re-run to see the cross-session moment.
+    long_term = load_long_term_memories(USER_ID)
+    understanding = load_understanding("user background and history")
+#    long_term = []  # ← STEP 4: delete this line
 
     # Build session context from long-term memories
     session_context = ""
@@ -475,10 +498,33 @@ def run():
         console.print()
 
     # Run the conversation
-    for turn_num, question in enumerate(CONVERSATION, 1):
+    console.print(Panel(
+        "Suggested questions — copy-paste one at a time:\n\n"
+        + "\n".join(f"  {i+1}. {q}" for i, q in enumerate(SUGGESTED_QUESTIONS))
+        + "\n\n[dim]Questions 6 and 7 are identical — watch for the cache hit on STEP 3.[/dim]\n"
+        + "[dim]Type 'quit' to stop.[/dim]",
+        border_style="dim",
+        title="Try These",
+    ))
+    console.print()
+
+    turn_num = 0
+    while True:
+        turn_num += 1
         console.print(Rule(f"[dim]Turn {turn_num}[/dim]", style="dim"))
-        console.print(f"  [bold blue]User:[/bold blue] {question}")
+        if turn_num == len(SUGGESTED_QUESTIONS) + 1:
+            console.print("  [dim]Done — type 'quit', then open a new terminal and run again.[/dim]")
         console.print()
+
+        try:
+            question = console.input("  [bold blue]You:[/bold blue] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if not question:
+            turn_num -= 1
+            continue
+        if question.lower() in ("quit", "exit", "q"):
+            break
 
         # ── Check semantic cache first (Step 3) ────────────────────────────
         cached = check_cache(USER_ID, question)
@@ -509,20 +555,31 @@ def run():
         with console.status("[dim]thinking...[/dim]", spinner="dots"):
             answer = call_agent(messages)
 
+        console.print(f"  [green]Agent:[/green] {textwrap.fill(answer, 70)}")
+        console.print()
+
         # ── Save turn ──────────────────────────────────────────────────────
         save_turn(SESSION_ID, "user", question)
         save_turn(SESSION_ID, "assistant", answer)
 
         # ── Save to cache (Step 3) ─────────────────────────────────────────
-        save_to_cache(USER_ID, question, answer)
+        cache_saved = save_to_cache(USER_ID, question, answer)
+        if cache_saved:
+            console.print(f"  [dim]→ inserted into [bold]cache[/bold]: Q: {question[:50]}{'...' if len(question)>50 else ''}[/dim]")
+            console.print(f"  [dim]                              A: {answer[:50]}{'...' if len(answer)>50 else ''}[/dim]")
+            console.print()
 
         # ── Extract and save memories (Steps 1 + 2) ────────────────────────
         existing = load_long_term_memories(USER_ID)
         with console.status("[dim]extracting memories...[/dim]", spinner="dots"):
-            extract_and_save(USER_ID, question, answer, existing)
-
-        console.print(f"  [green]Agent:[/green] {textwrap.fill(answer, 70)}")
+            saved_memories = extract_and_save(USER_ID, question, answer, existing)
+        if saved_memories:
+            for label, content in saved_memories:
+                console.print(f"  [dim]→ saved {label}: {content}[/dim]")
+        else:
+            console.print(f"  [dim]→ no memories extracted this turn[/dim]")
         console.print()
+        console.print(Rule(style="dim"))
 
     # ── Show what got saved ────────────────────────────────────────────────
     console.print(Rule("[dim]Memory State After This Session[/dim]", style="dim"))

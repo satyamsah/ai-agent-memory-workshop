@@ -1,18 +1,16 @@
 """
-demo/context_window.py — Watch the context window fill up and fail in real time.
+demo/context_window_recovery.py — Same conversation, with Memory Manager.
 
-A real conversation with Claude about DevCore API issues.
-Claude responds to each message. Token count grows each turn.
-When the context limit is hit — Claude throws a real error.
-Then the Memory Manager summarizes and the conversation continues.
+Every 5 turns: old turns compressed into a summary, deleted from context.
+Context stays flat. Conversation never crashes.
 
-Run:  python demo/context_window.py
-Requires: ANTHROPIC_API_KEY in .env
+Run:  python demo/context_window_recovery.py
 """
 
 import os
 import sys
 import time
+import sqlite3
 import textwrap
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -27,12 +25,11 @@ load_dotenv()
 
 console = Console()
 
-# ── Config ─────────────────────────────────────────────────────────────────
-# Artificial limit so the demo fills up in ~10 turns
-# Real Claude is 200,000 tokens — same problem, just bigger scale
 CONTEXT_LIMIT = 1200
 WARN_THRESHOLD = 0.75
 CRIT_THRESHOLD = 0.90
+SUMMARIZE_EVERY = 4
+DB_PATH = "context_window_demo.db"
 
 SYSTEM_PROMPT = """You are a DevCore API support agent. DevCore is a developer API platform.
 
@@ -45,17 +42,14 @@ Guidelines:
 - Be concise — 2-3 sentences per response unless code is needed
 - If the issue requires account changes, direct the user to dashboard.devcore.io
 - Never ask for the full API key — only the last 4 characters for verification
-- Escalate to a human agent if the issue is a billing dispute or account suspension
 
 Common issues you handle:
 - Authentication errors (401): invalid or expired API keys
 - Authorization errors (403): missing scopes or wrong tier
 - Rate limiting (429): free tier is 10 req/sec, Pro is 100 req/sec
 - Timeout errors: regional latency, suggest nearest endpoint
-- SDK issues: Python, Node.js, Go, Ruby SDKs available at docs.devcore.io
 """
 
-# Pre-set questions so the demo is repeatable and fills up predictably
 QUESTIONS = [
     "Hi, I'm getting a 401 Unauthorized error on all my API calls.",
     "I am passing the key correctly in the Authorization header as Bearer token.",
@@ -118,23 +112,59 @@ def render_context_bar(token_counts: dict, turn: int):
     ))
 
 
-def summarize_messages(messages: list) -> tuple[list, str]:
-    summary = (
-        "SUMMARY OF EARLIER CONVERSATION: "
-        "User reported 401 Unauthorized errors on DevCore API. "
-        "Root causes found and fixed: (1) stale API key not updated on production server, "
-        "(2) trailing newline in copy-pasted key, (3) missing write scope on API key. "
-        "Now debugging 429 Too Many Requests — user is on free tier (10 req/sec limit), "
-        "needs exponential backoff with Retry-After header. "
-        "Also asking about daily limits, temporary rate increases, and regional endpoints."
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("""CREATE TABLE IF NOT EXISTS context_turns (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        role    TEXT NOT NULL,
+        content TEXT NOT NULL,
+        type    TEXT DEFAULT 'turn'
+    )""")
+    conn.commit()
+    conn.close()
+
+
+def save_turn(role: str, content: str, turn_type: str = "turn"):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "INSERT INTO context_turns (role, content, type) VALUES (?,?,?)",
+        (role, content, turn_type)
     )
-    recent = messages[-2:]
-    compressed = [{"role": "user", "content": f"[Context from earlier session]: {summary}"},
-                  {"role": "assistant", "content": "Understood. I have context from our earlier conversation. Please continue."}] + recent
+    conn.commit()
+    conn.close()
+
+
+def clear_turns():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("DELETE FROM context_turns")
+    conn.commit()
+    conn.close()
+
+
+def summarize_messages(client, messages: list) -> tuple[list, str]:
+    turns_text = "\n".join(f"{m['role'].upper()}: {m['content']}" for m in messages)
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        messages=[{
+            "role": "user",
+            "content": (
+                "Summarize this conversation in 3-4 sentences. "
+                "Keep all key facts, errors, fixes, and decisions. "
+                "Be concise — this summary replaces the full history.\n\n"
+                + turns_text
+            ),
+        }],
+    )
+    summary = response.content[0].text.strip()
+    compressed = [
+        {"role": "user", "content": f"[Summary of earlier conversation]: {summary}"},
+        {"role": "assistant", "content": "Understood, I have context from earlier. Please continue."},
+    ]
     return compressed, summary
 
 
-def run_demo():
+def run():
     api_key = os.getenv("ANTHROPIC_API_KEY")
     auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
     base_url = os.getenv("ANTHROPIC_BASE_URL")
@@ -142,11 +172,8 @@ def run_demo():
     if not api_key and not auth_token:
         console.print(Panel(
             "[bold red]✗ No Anthropic credentials found[/bold red]\n\n"
-            "Create a .env file in the workshop root:\n\n"
-            "  [bold]ANTHROPIC_API_KEY=sk-ant-...[/bold]\n\n"
-            "Get your key at: https://console.anthropic.com",
-            border_style="red",
-            title="Setup Error",
+            "Set ANTHROPIC_API_KEY in .env",
+            border_style="red", title="Setup Error",
         ))
         sys.exit(1)
 
@@ -156,37 +183,40 @@ def run_demo():
         base_url=base_url,
     )
     messages = []
+    init_db()
+    clear_turns()  # fresh state each run
 
     console.print()
-    console.print(Rule("[bold]Demo: Context Window Failure + Memory Manager Rescue[/bold]"))
+    console.print(Rule("[bold]Demo — Memory Manager Recovery[/bold]"))
     console.print()
     console.print(Panel(
-        "[bold]What you will see:[/bold]\n\n"
-        "  1. A real conversation with Claude about DevCore API issues\n"
-        "  2. Token count grows with every turn\n"
-        "  3. At 75% — yellow warning fires\n"
-        "  4. At 90% — context limit exceeded, Claude throws a real error\n"
-        "  5. Memory Manager summarizes old turns — context freed\n"
-        "  6. Conversation continues with full history preserved\n\n"
-        f"[dim]Behind the scenes:[/dim]\n"
-        f"[dim]We cap the context at {CONTEXT_LIMIT} tokens so this happens in ~10 turns.[/dim]\n"
-        f"[dim]Real Claude is ~200,000 tokens — same problem, just at larger scale.[/dim]",
-        title="Context Window Demo",
-        border_style="blue",
+        "Same conversation as the crash demo — but with a Memory Manager.\n\n"
+        f"  Every {SUMMARIZE_EVERY} turns: old turns compressed into a summary.\n"
+        "  Old turns deleted. Summary replaces them. Context drops.\n"
+        "  Conversation continues — context never bursts.\n\n"
+        f"[dim]Context capped at {CONTEXT_LIMIT} tokens. Real Claude is 200,000 — same pattern.[/dim]",
+        border_style="green",
+        title="With Memory Manager",
     ))
     console.print()
-    input("  Press Enter to start...\n")
+    console.print(Panel(
+        "Copy-paste these one at a time:\n\n"
+        + "\n".join(f"  {i+1:>2}. {q}" for i, q in enumerate(QUESTIONS)),
+        border_style="dim",
+        title="Questions",
+    ))
+    console.print()
+    console.input("  Press Enter to start...")
+    console.print()
 
-    summarized = False
     turn_idx = 0
 
     while True:
         turn_idx += 1
 
-        # Wait for facilitator to type the next question
         console.print(Rule(f"[dim]Turn {turn_idx}[/dim]", style="dim"))
         try:
-            question = input("  You: ").strip()
+            question = console.input("  [bold blue]You:[/bold blue] ").strip()
         except (EOFError, KeyboardInterrupt):
             break
         if not question:
@@ -194,58 +224,64 @@ def run_demo():
         if question.lower() in ("exit", "quit", "q"):
             break
 
-        # Check tokens BEFORE sending — enforce the artificial limit
         messages.append({"role": "user", "content": question})
+        save_turn("user", question)
         token_counts = count_context_tokens(messages)
-        pct = token_counts["total"] / CONTEXT_LIMIT
 
         console.print()
         render_context_bar(token_counts, turn_idx)
         time.sleep(1)
 
-        # Hit the limit — show real failure
-        if pct >= CRIT_THRESHOLD and not summarized:
+        # Every SUMMARIZE_EVERY turns — compress before the API call
+        if turn_idx % SUMMARIZE_EVERY == 0:
             console.print()
             console.print(Panel(
-                f"[bold red]✗  anthropic.BadRequestError: prompt is too long[/bold red]\n\n"
-                f"  Your request used [bold]{token_counts['total']:,} tokens[/bold],\n"
-                f"  which exceeds the context limit of [bold]{CONTEXT_LIMIT:,} tokens[/bold].\n\n"
-                f"  [dim]This is the real error your users would hit in production.[/dim]\n"
-                f"  [dim]Every long conversation eventually crashes here.[/dim]\n\n"
-                f"  [yellow]Without a Memory Manager → the agent dies.[/yellow]\n"
-                f"  [yellow]The user loses all context. Conversation starts over.[/yellow]",
-                border_style="red",
-                title="⚠  Context Window Exceeded",
+                f"[yellow]Turn {turn_idx} — Memory Manager triggered[/yellow]\n\n"
+                f"  Compressing {SUMMARIZE_EVERY} turns → 1 summary\n"
+                f"  Old turns deleted. Summary kept.\n\n"
+                f"  [dim]Tokens before: {token_counts['total']:,}[/dim]",
+                border_style="yellow",
+                title="Memory Manager — Compressing",
+            ))
+
+            # Show DB before compression — students open it now
+            console.print(Panel(
+                f"  [yellow]Open the database now — before compression:[/yellow]\n\n"
+                f"  [bold]sqlite3 context_window_demo.db \"SELECT * FROM context_turns;\"[/bold]\n\n"
+                f"  [dim]You should see {turn_idx} rows — every turn so far.[/dim]",
+                border_style="yellow",
+                title="Check the DB — Before",
             ))
             console.print()
-            time.sleep(2)
-            input("  Press Enter to watch the Memory Manager rescue this...\n")
+            console.input("  Press Enter to compress...")
 
-            with console.status("[bold yellow]Memory Manager: compressing older turns into summary...[/bold yellow]", spinner="dots"):
-                time.sleep(3)
-                messages, summary = summarize_messages(messages)
-                summarized = True
+            with console.status("[bold yellow]Compressing...[/bold yellow]", spinner="dots"):
+                time.sleep(2)
+                messages, summary = summarize_messages(client, messages)
+
+            # Update DB — delete all turns, insert summary row
+            clear_turns()
+            save_turn("assistant", summary, turn_type="summary")
 
             new_counts = count_context_tokens(messages)
             saved = token_counts["total"] - new_counts["total"]
 
             console.print(Panel(
-                f"[bold green]✓  Memory Manager: context rescued[/bold green]\n\n"
-                f"  Turns compressed:  [bold]{turn_idx - 2}  →  1 summary[/bold]\n"
-                f"  Tokens before:     [red]{token_counts['total']:,}[/red]\n"
-                f"  Tokens after:      [green]{new_counts['total']:,}[/green]\n"
-                f"  Tokens freed:      [bold green]{saved:,}[/bold green]\n\n"
-                f"  [dim]Summary injected into context:[/dim]\n"
-                f"  [dim]{textwrap.fill(summary, 65)}[/dim]",
-                title="Memory Manager — Rescue Complete",
+                f"[bold green]✓ Compression complete[/bold green]\n\n"
+                f"  Tokens before:  [red]{token_counts['total']:,}[/red]\n"
+                f"  Tokens after:   [green]{new_counts['total']:,}[/green]\n"
+                f"  Tokens freed:   [bold green]{saved:,}[/bold green]\n\n"
+                f"  [yellow]Check the DB now:[/yellow]\n"
+                f"  [bold]sqlite3 context_window_demo.db \"SELECT * FROM context_turns;\"[/bold]\n\n"
+                f"  [dim]All old turns are gone. One summary row remains.[/dim]",
+                title="Memory Manager — Done",
                 border_style="green",
             ))
             console.print()
+            console.input("  Press Enter to continue...")
             render_context_bar(new_counts, turn_idx)
-            time.sleep(2)
-            input("  Press Enter to continue the conversation...\n")
+            time.sleep(1)
 
-        # Get real Claude response
         with console.status("[dim]Claude is thinking...[/dim]", spinner="dots"):
             response = client.messages.create(
                 model="claude-haiku-4-5-20251001",
@@ -256,6 +292,7 @@ def run_demo():
 
         answer = response.content[0].text.strip()
         messages.append({"role": "assistant", "content": answer})
+        save_turn("assistant", answer)
 
         console.print()
         console.print(f"  [green]Agent:[/green] {textwrap.fill(answer, 70)}")
@@ -266,21 +303,18 @@ def run_demo():
     console.print()
     console.print(Panel(
         "[bold]What just happened:[/bold]\n\n"
-        "  • Real conversation with Claude — real token counts\n"
-        "  • Context window filled up after ~10 turns\n"
-        "  • Without Memory Manager → real API error, agent crashes\n"
-        "  • Memory Manager compressed old turns into a summary\n"
-        "  • Agent continued with full awareness of the earlier conversation\n\n"
+        f"  • Every {SUMMARIZE_EVERY} turns — old turns compressed into a summary\n"
+        "  • Old turns deleted. Summary replaced them. Context stayed flat.\n"
+        "  • Agent kept full awareness — conversation never reset\n\n"
         "[bold]Key insight:[/bold]\n"
-        "  The LLM does not manage this for you.\n"
-        "  YOUR CODE decides what goes into the context window.\n"
-        "  The Memory Manager is that code.\n\n"
-        "[dim]Next → Module 1: build conversational memory from scratch[/dim]",
+        "  YOUR CODE decides what stays in the context window.\n"
+        "  Compress on a schedule — context never bursts.\n\n"
+        "[dim]Next → Module 2: extract long-term memories instead of raw turns[/dim]",
+        border_style="green",
         title="Summary",
-        border_style="blue",
     ))
     console.print()
 
 
 if __name__ == "__main__":
-    run_demo()
+    run()
