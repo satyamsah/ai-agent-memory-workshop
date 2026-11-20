@@ -137,7 +137,7 @@ From Google's agent memory architecture:
 
 **Facts are exact. You look them up.**
 ```
-"What tier is Alex on?"  →  SQL query  →  "Pro"
+"What plan is my DevCore account on?"  →  SQL query  →  "Pro"
 "What did Alex buy?"     →  SQL query  →  exact rows
 ```
 
@@ -162,7 +162,7 @@ User: "I just upgraded to Pro"
          ↓
 Agent writes immediately: { fact: "Alex on Pro tier", timestamp: now }
          ↓
-If the user asks next turn: "What tier am I on?" → answer is there
+If the user asks next turn: "What plan is my DevCore account on?" → answer is there
 ```
 
 **Understanding → write after enough context (asynchronous)**
@@ -389,7 +389,7 @@ The Memory Manager decides what to read and what to write for each query."
 ### The routing logic
 
 ```
-Query: "What tier am I on?"
+Query: "What plan is my DevCore account on?"
   → exact fact → SQL query → "Pro tier"
 
 Query: "Same issue as last week"

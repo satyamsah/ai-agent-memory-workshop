@@ -56,7 +56,7 @@ SESSIONS = {
         "Hi, I need some help.",
         "I'm getting a 401 error again on my API calls.",
         "What do I usually get wrong when setting up credentials?",
-        "What tier am I on?",
+        "What plan is my DevCore account on?",
         "What's the rate limit on the free tier?",
         "What's the rate limit on the free tier?",
     ],

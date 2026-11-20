@@ -8,7 +8,7 @@ PROBLEM:
     - FAISS:  understanding/patterns (long-term)
 
   Loading all of them on every turn is slow, noisy, and breaks context.
-  "What tier am I on?" doesn't need FAISS.
+  "What plan is my DevCore account on?" doesn't need FAISS.
   "What do I usually get wrong?" doesn't need an exact SQL row.
   "Hi" doesn't need any memory at all.
 
@@ -91,14 +91,14 @@ Existing memories:
 # - Turn 1: generic greeting → no memory needed
 # - Turn 2: 401 error again → route to episodic
 # - Turn 3: "what do I usually get wrong" → route to understanding (FAISS)
-# - Turn 4: "what tier am I on" → route to facts (SQL)
+# - Turn 4: "what plan is my DevCore account on" → route to facts (SQL)
 # - Turn 5: rate limit question → cache check first
 # - Turn 6: same rate limit question → cache hit
 CONVERSATION = [
     "Hi, I need some help.",
     "I'm getting a 401 error again on my API calls.",
     "What do I usually get wrong when setting up credentials?",
-    "What tier am I on?",
+    "What plan is my DevCore account on?",
     "What's the rate limit on the free tier?",
     "What's the rate limit on the free tier?",   # cache hit
 ]
