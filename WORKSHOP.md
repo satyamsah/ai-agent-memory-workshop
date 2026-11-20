@@ -49,10 +49,12 @@ That's the problem we're solving today.
 Every API call is completely fresh. Claude does not remember the previous call.
 
 ```
-Call 1:   messages = [{"role": "user", "content": "I have a 401 error"}]
+Call 1:   You type: "I have a 401 error"
+          messages = [{"role": "user", "content": "I have a 401 error"}]
           → Claude responds
 
-Call 2:   messages = [{"role": "user", "content": "Still broken"}]
+Call 2:   You type: "Still broken"
+          messages = [{"role": "user", "content": "Still broken"}]
           → Claude has NO idea what "still broken" means
             It never saw Call 1
 ```
