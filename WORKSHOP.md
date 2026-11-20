@@ -112,7 +112,7 @@ You type two messages. The second should only make sense if Claude remembered th
 
 | Type | Example |
 |------|---------|
-| Working memory | You said "I have a 401 error" two lines ago — the agent knows this right now |
+| Working memory | You said "I have a 401 error" 30 seconds ago — the agent knows this right now |
 | Conversational memory | The agent remembers everything from this session — but close the terminal, it's gone |
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
