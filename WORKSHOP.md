@@ -125,7 +125,7 @@ That's what `demo/context_window.py` shows — we'll run it right after this sec
 
 | Type | Example |
 |------|---------|
-| Working memory | Agent's scratchpad during task execution — plans, tool outputs, intermediate steps. Gone when the task finishes |
+| Working memory | Agent's scratchpad during task execution — plans, tool outputs, intermediate steps. Discarded when the task completes, even if the terminal is still open |
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
 **Long-term memory — survives after the terminal closes:**
