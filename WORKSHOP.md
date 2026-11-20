@@ -112,8 +112,8 @@ You type two messages. The second should only make sense if Claude remembered th
 
 | Type | Example |
 |------|---------|
-| Working memory | You said "I have a 401 error" 30 seconds ago — the agent knows this right now |
-| Conversational memory | The agent remembers everything from this session — but close the terminal, it's gone |
+| Working memory | The `messages` list in the current API call — has a size limit. Fill it up → API throws an error (we'll show this in the demo) |
+| Conversational memory | All turns this session, loaded from SQLite — survives the context limit because it's on disk |
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
 **Long-term memory — survives after the terminal closes:**
