@@ -49,8 +49,8 @@ That's the problem we're solving today.
 Every API call is completely fresh. Claude does not remember the previous call.
 
 ```
-Call 1:   You type: "I have a 401 error"
-          messages = [{"role": "user", "content": "I have a 401 error"}]
+Call 1:   You type: "I am getting a 401 error while calling the GitHub API"
+          messages = [{"role": "user", "content": "I am getting a 401 error while calling the GitHub API"}]
           → Claude responds
 
 Call 2:   You type: "Still broken"

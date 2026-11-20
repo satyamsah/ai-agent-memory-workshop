@@ -61,9 +61,10 @@ def run():
 
     # ── Message 1 ─────────────────────────────────────────────────────────────
     console.print(Rule("[dim]Call 1[/dim]", style="dim"))
+    console.print("[dim]  Suggested: 'I am getting a 401 error while calling the GitHub API'[/dim]")
     msg1 = console.input("  [bold blue]You:[/bold blue] ").strip()
     if not msg1:
-        msg1 = "Hi, I'm getting a 401 error on all my API calls."
+        msg1 = "I am getting a 401 error while calling the GitHub API."
         console.print(f"  [dim](using: {msg1})[/dim]")
 
     with console.status("[dim]calling Claude...[/dim]", spinner="dots"):
