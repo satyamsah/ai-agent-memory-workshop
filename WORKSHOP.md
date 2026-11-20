@@ -121,17 +121,18 @@ That's what `demo/context_window.py` shows — we'll run it right after this sec
 
 ![Forms of Agent Memory](assets/forms_of_agent_memory.png)
 
-**Short-term memory — exists only while you're talking:**
+**Short-term memory — exists only while the task is running:**
 
 | Type | Example |
 |------|---------|
-| Conversational memory | All turns this session, loaded from SQLite — survives context overflow because it's on disk |
+| Working memory | Agent's scratchpad during task execution — plans, tool outputs, intermediate steps. Gone when the task finishes |
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
 **Long-term memory — survives after the terminal closes:**
 
 | Type | Example |
 |------|---------|
+| Conversational memory | "Alex told me last week they use Python SDK" — retrieved when relevant to a new session |
 | Facts | "Alex is on the free plan" — remembered next session, next week |
 | Episodic | "Nov 19 — Alex had a 401 caused by a trailing newline in their key" |
 | Understanding | "Alex always makes copy-paste errors with credentials" — pattern learned over many sessions |
