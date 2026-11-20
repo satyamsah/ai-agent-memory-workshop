@@ -126,6 +126,13 @@ That's what `demo/context_window.py` shows — we'll run it right after this sec
 | Type | Example |
 |------|---------|
 | Working memory | Agent's scratchpad during task execution — plans, tool outputs, intermediate steps. Discarded when the task completes, even if the terminal is still open |
+
+> **Key design principle:**
+> Working memory should NOT be the entire conversation history. It should be a curated, task-specific state the agent updates as execution progresses.
+>
+> Design memory around two questions:
+> 1. What should the agent remember about the user and previous interactions? → **Long-term memory**
+> 2. What does the agent need to remember to finish the current task? → **Working memory**
 | Semantic cache | You asked "what's the rate limit?" — agent cached the answer. Ask again: instant reply, no LLM call |
 
 **Long-term memory — survives after the terminal closes:**
