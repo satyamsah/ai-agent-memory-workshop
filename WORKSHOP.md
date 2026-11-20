@@ -37,7 +37,8 @@ While students run `python check_setup.py`:
 > 1. Go directly to [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
 > 2. Sign up or log in
 > 3. Click **Create Key** — copy it immediately (shown only once)
-> 4. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
+> 4. Save it somewhere safe (password manager, notes) — never share it, never commit it to git
+> 5. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
 >
 > Free tier works for this workshop. No credit card required to start.
 
