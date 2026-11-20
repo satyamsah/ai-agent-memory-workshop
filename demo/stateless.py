@@ -1,8 +1,8 @@
 """
 demo/stateless.py — Prove that LLMs are stateless.
 
-Two back-to-back API calls. No history passed between them.
-Watch Claude forget everything from Call 1.
+You type two messages. Each goes as a fresh API call — no history passed.
+Watch Claude forget everything you said in the first message.
 
 RUN:
   python demo/stateless.py
@@ -10,6 +10,7 @@ RUN:
 
 import os
 import sys
+import textwrap
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
@@ -27,7 +28,7 @@ console = Console()
 def call(client, messages):
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=80,
+        max_tokens=120,
         messages=messages,
     )
     return response.content[0].text.strip()
@@ -54,34 +55,40 @@ def run():
     console.print()
     console.print(Rule("[bold]Demo — LLMs Are Stateless[/bold]"))
     console.print()
-
-    # ── Call 1 ────────────────────────────────────────────────────────────────
-    console.print("[dim]Call 1[/dim]")
-    messages_1 = [{"role": "user", "content": "Hi, I'm getting a 401 error on all my API calls."}]
-    console.print(f"  [bold blue]User:[/bold blue] {messages_1[0]['content']}")
-
-    with console.status("[dim]calling Claude...[/dim]", spinner="dots"):
-        reply_1 = call(client, messages_1)
-
-    console.print(f"  [green]Claude:[/green] {reply_1}")
+    console.print("[dim]Type two messages. Each is a separate API call — no history passed between them.[/dim]")
     console.print()
 
-    # ── Call 2 — fresh, no history ────────────────────────────────────────────
-    console.print("[dim]Call 2 — new messages list, no history passed[/dim]")
-    messages_2 = [{"role": "user", "content": "Still broken. Any other ideas?"}]
-    console.print(f"  [bold blue]User:[/bold blue] {messages_2[0]['content']}")
+    # ── Message 1 ─────────────────────────────────────────────────────────────
+    console.print(Rule("[dim]Call 1[/dim]", style="dim"))
+    msg1 = console.input("  [bold blue]You:[/bold blue] ").strip()
+    if not msg1:
+        msg1 = "Hi, I'm getting a 401 error on all my API calls."
+        console.print(f"  [dim](using: {msg1})[/dim]")
 
     with console.status("[dim]calling Claude...[/dim]", spinner="dots"):
-        reply_2 = call(client, messages_2)
+        reply1 = call(client, [{"role": "user", "content": msg1}])
 
-    console.print(f"  [green]Claude:[/green] {reply_2}")
+    console.print(f"  [green]Claude:[/green] {textwrap.fill(reply1, 70)}")
+    console.print()
+
+    # ── Message 2 — fresh call, history NOT passed ─────────────────────────
+    console.print(Rule("[dim]Call 2 — fresh API call, no history[/dim]", style="dim"))
+    console.print("[dim]  (say something that only makes sense if Claude remembers Call 1)[/dim]")
+    msg2 = console.input("  [bold blue]You:[/bold blue] ").strip()
+    if not msg2:
+        msg2 = "Still broken. Any other ideas?"
+        console.print(f"  [dim](using: {msg2})[/dim]")
+
+    with console.status("[dim]calling Claude...[/dim]", spinner="dots"):
+        reply2 = call(client, [{"role": "user", "content": msg2}])
+
+    console.print(f"  [green]Claude:[/green] {textwrap.fill(reply2, 70)}")
     console.print()
 
     console.print(Panel(
-        "[yellow]Claude has NO idea what 'Still broken' refers to.[/yellow]\n\n"
-        "It never saw Call 1. Each API call is a fresh start.\n\n"
-        "messages_1 and messages_2 are completely separate lists.\n"
-        "Nothing carries over between them.\n\n"
+        "[yellow]Claude has no idea what you said in Call 1.[/yellow]\n\n"
+        "Each call gets its own fresh messages list.\n"
+        "Nothing carries over — not even from one line above.\n\n"
         "[dim]This is not a bug. This is how every LLM API works.[/dim]\n\n"
         "[bold]Your code must pass the history. The LLM won't.[/bold]",
         border_style="yellow",

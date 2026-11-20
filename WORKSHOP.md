@@ -64,7 +64,7 @@ The LLM does not manage this for you.
 ```
 python demo/stateless.py
 ```
-Two API calls. No history passed between them. Watch Claude ask "what's broken?" on Call 2 — it never saw Call 1.
+You type two messages. The second should only make sense if Claude remembered the first ("Still broken", "Same error", "What about that?"). Watch it ask you to start over — it never saw Call 1.
 
 > **Audience question:**
 > "Who here has built a chatbot that just passes the full conversation history every turn?
