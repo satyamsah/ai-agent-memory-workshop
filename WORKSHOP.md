@@ -201,7 +201,9 @@ Extract AFTER session, not during — don't update identity from one sentence
 
 > **Audience question:**
 > "Why is it dangerous to update understanding from a single sentence?
->  Example: user says 'maybe I like yellow today' — should the agent remember 'user likes yellow'?"
+>  Example: user says 'maybe I'll try the Go SDK today' — should the agent remember 'user prefers Go'?"
+>
+> Expected: it's uncertain, temporary, one-off. If the agent saves it, next session it might suggest Go examples to someone who uses Python. Understanding should come from repeated patterns across sessions, not a single sentence.
 
 ---
 
