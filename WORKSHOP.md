@@ -484,14 +484,16 @@ It does exactly what you just built — but as a library:
 
 ```python
 # SAVE — after each turn
-# Mem0 calls Claude internally, extracts facts/events/patterns, saves to FAISS
+# Mem0 calls Claude internally, extracts:
+#   facts + episodic events → SQLite
+#   patterns / understanding → FAISS (vector store)
 mem0.add([
     {"role": "user", "content": question},
     {"role": "assistant", "content": answer},
 ], user_id="alex-chen")
 
 # RETRIEVE — before each turn
-# Mem0 embeds the question, vector similarity search in FAISS, returns top matches
+# Mem0 embeds the question, semantic search across SQLite + FAISS, returns top matches
 memories = mem0.search(question, filters={"user_id": "alex-chen"}, limit=3)
 ```
 
