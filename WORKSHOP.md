@@ -131,7 +131,14 @@ You type two messages. The second should only make sense if Claude remembered th
 
 ### 1.2 What is the context window?
 
-Every time you call the Claude API, you pass a `messages` list. The context window is the maximum size of that list — measured in **tokens** (roughly 1 token ≈ 1 word).
+Every LLM has a context window — a hard limit on how much it can process in one API call, measured in **tokens** (roughly 1 token ≈ 1 word). Everything counts toward that limit:
+
+- System prompt
+- Conversation history (every turn so far)
+- Tool outputs
+- Retrieved documents (RAG, memory injection)
+
+Once you hit the limit, the API throws an error. Your agent crashes.
 
 ```
 client.messages.create(
