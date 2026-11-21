@@ -33,11 +33,13 @@ An AI support agent that remembers you across sessions.
 
 **What we build today:**
 
-| Layer | What it does |
-|-------|-------------|
-| Conversational memory | SQLite stores every turn — agent remembers within and across sessions |
-| Long-term extraction | LLM reads each turn, extracts facts / events / patterns, saves them |
-| Semantic cache | Exact same question → instant answer, no LLM call |
+| Layer | What it does | Storage |
+|-------|-------------|---------|
+| Conversational memory | Stores every turn — agent remembers within and across sessions | SQLite |
+| Long-term extraction | LLM reads each turn, extracts facts / events / patterns, saves them | SQLite + FAISS |
+| Semantic cache | Exact same question → instant answer, no LLM call | SQLite + FAISS |
+
+**Why FAISS?** Facts and episodic memories are exact rows in SQLite — fast to look up by user ID. Patterns and understanding are stored in FAISS, a vector store from Meta — it finds semantically similar memories even when the words don't match exactly. "What do I usually get wrong?" retrieves "Alex makes copy-paste errors with credentials" via vector similarity, not keyword match.
 
 **Key components of every agent in this workshop:**
 
