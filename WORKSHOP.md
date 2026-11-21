@@ -514,6 +514,15 @@ New process, new terminal. Mem0 loads memories from Session 1 before Alex says a
 "Same architecture you built in Module 2. You wrote ~300 lines. Mem0 is 2 lines.
 But now you understand every line inside it."
 
+> **Audience question:**
+> "Claude just extracted memories from the conversation. What could go wrong?
+>  Should users be able to delete their memories?"
+>
+> - **Wrong extraction**: Claude extracted "Alex is on free tier" but Alex upgraded last month. The agent keeps giving wrong answers until that memory is deleted and replaced.
+> - **Stale episodic**: "Alex had a 401 from a trailing newline" was true 6 months ago. If it persists forever, the agent assumes that's the issue every time Alex reports a 401. Wrong assumption, bad support.
+> - **Privacy / GDPR**: Users have a legal right to see and delete their personal data. "Delete my account" must also delete all memories — if you can't do that, you have a compliance problem.
+> - **The fix**: Build `delete_memories(user_id)` from day one. Add a TTL (time-to-live) on facts — expire after 90 days unless refreshed. Let users see what's stored. Mem0 has `mem0.delete()` and `mem0.get_all()` built in for exactly this.
+
 ---
 
 ## Q&A (2:20–2:30)
