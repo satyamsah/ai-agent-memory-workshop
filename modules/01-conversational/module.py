@@ -83,18 +83,18 @@ def init_db():
 # Remove the `pass` and uncomment the function body below.
 # Then re-run.
 # ═══════════════════════════════════════════════════════════════════════════════
-#
-# def save_turn(session: str, role: str, content: str):
-#     pass
 
 def save_turn(session: str, role: str, content: str):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT INTO turns (session, role, content) VALUES (?, ?, ?)",
-        (session, role, content)
-    )
-    conn.commit()
-    conn.close()
+    pass
+
+# def save_turn(session: str, role: str, content: str):
+#     conn = sqlite3.connect(DB_PATH)
+#     conn.execute(
+#         "INSERT INTO turns (session, role, content) VALUES (?, ?, ?)",
+#         (session, role, content)
+#     )
+#     conn.commit()
+#     conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -104,20 +104,20 @@ def save_turn(session: str, role: str, content: str):
 # Then re-run. Open a new terminal and run again — the agent remembers.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# def load_history(limit: int = 20) -> list:
-#     return []
-
 def load_history(limit: int = 20) -> list:
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute(
-        """SELECT role, content FROM turns
-           WHERE session LIKE ?
-           ORDER BY timestamp ASC
-           LIMIT ?""",
-        (f"{USER_ID}%", limit)
-    ).fetchall()
-    conn.close()
-    return [{"role": row[0], "content": row[1]} for row in rows]
+    return []
+
+# def load_history(limit: int = 20) -> list:
+#     conn = sqlite3.connect(DB_PATH)
+#     rows = conn.execute(
+#         """SELECT role, content FROM turns
+#            WHERE session LIKE ?
+#            ORDER BY timestamp ASC
+#            LIMIT ?""",
+#         (f"{USER_ID}%", limit)
+#     ).fetchall()
+#     conn.close()
+#     return [{"role": row[0], "content": row[1]} for row in rows]
 
 
 # ── Agent call ────────────────────────────────────────────────────────────────

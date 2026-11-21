@@ -16,11 +16,42 @@
 | 0:40–0:50 | Demo — Context window crash | Demo |
 | 0:50–1:10 | Module 1 — Conversational memory | Hands-on |
 | 1:10–1:20 | ☕ Break | — |
-| 1:20–1:40 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
-| 1:40–1:50 | Demo — Memory Manager recovery | Demo |
-| 1:50–2:10 | Module 3 — Memory Manager routing | Hands-on |
-| 2:10–2:20 | Demo — Mem0 (industry standard) | Demo |
-| 2:20–2:30 | Q&A + wrap up | Q&A |
+| 1:20–1:50 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
+| 1:50–2:10 | Demo — Mem0 (industry standard) | Demo |
+| 2:10–2:30 | Q&A + wrap up | Q&A |
+
+---
+
+## What We're Building
+
+An AI support agent that remembers you across sessions.
+
+**The agent:** "DevCore API Support" — answers developer questions about API errors, rate limits, account setup.
+
+**The problem:** every LLM call is stateless. Without memory, the agent forgets mid-conversation and knows nothing when you open a new terminal.
+
+**What we build today:**
+
+| Layer | What it does |
+|-------|-------------|
+| Conversational memory | SQLite stores every turn — agent remembers within and across sessions |
+| Long-term extraction | LLM reads each turn, extracts facts / events / patterns, saves them |
+| Semantic cache | Exact same question → instant answer, no LLM call |
+
+**Key components of every agent in this workshop:**
+
+- **System prompt** — tells the agent who it is, what it knows, how to behave. Sent on every API call.
+- **Messages list** — the conversation so far: `[{"role": "user", ...}, {"role": "assistant", ...}]`. This is what the agent "sees".
+- **Memory** — YOUR code decides what goes into the messages list. That's the whole workshop.
+
+```python
+client.messages.create(
+    model="claude-haiku-4-5-20251001",
+    system=SYSTEM_PROMPT,       # ← who the agent is
+    messages=messages,          # ← what it remembers
+    max_tokens=200,
+)
+```
 
 ---
 
@@ -28,34 +59,33 @@
 
 While students run `python check_setup.py`:
 
-> **Before running anything:** students must activate the virtual environment.
-> Tell them:
+> **Step 1 — Get an Anthropic API key:**
+> 1. Go directly to [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
+> 2. Sign up or log in
+> 3. Click **Create Key** — copy it immediately (shown only once)
+> 4. Save it somewhere safe — never share it, never commit it to git
+> 5. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
+>
+> Free tier works for this workshop. No credit card required to start.
+
+> **Step 2 — Create your `.env` file:**
+> ```
+> cp .env.example .env
+> # then open .env and paste your ANTHROPIC_API_KEY
+> ```
+
+> **Step 3 — Activate the virtual environment:**
 > ```
 > cd memory-workshop
 > source .venv/bin/activate    # Mac/Linux
 > .venv\Scripts\activate       # Windows
 > ```
-> Then verify:
+> **If you don't see `(.venv)` in your prompt — nothing will work.**
+
+> **Step 4 — Run setup check:**
 > ```
 > python check_setup.py
 > ```
->
-> **If they don't see `(.venv)` in their prompt — nothing will work.**
-
-> **Before running:** students need a `.env` file with their API key.
-> Tell them:
-> ```
-> cp .env.example .env
-> # then open .env and paste their ANTHROPIC_API_KEY
-> ```
-> **Getting an Anthropic API key:**
-> 1. Go directly to [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
-> 2. Sign up or log in
-> 3. Click **Create Key** — copy it immediately (shown only once)
-> 4. Save it somewhere safe (password manager, notes) — never share it, never commit it to git
-> 5. Paste it into `.env` as `ANTHROPIC_API_KEY=sk-ant-...`
->
-> Free tier works for this workshop. No credit card required to start.
 
 - Ask: "Who here has built something with an LLM?"
 - Ask: "Who ran into a problem where the agent forgot something?"
@@ -206,21 +236,22 @@ If the user asks next turn: "What plan is my DevCore account on?" → answer is 
 **Understanding → write after enough context (asynchronous)**
 
 ```
-Session 1: "Help me test the payment service — mock the Stripe client first"
+Session 1: "Help me test CheckoutService"
+           → user: "It depends on PaymentService and InventoryService — mock both and inject them"
            → agent saves nothing yet, one session is not a pattern
 
-Session 2: "Same as before — mock the DB client, then run the integration test"
+Session 2: "Help me test CheckoutService again"
            → extract_memories() runs → saves to FAISS:
-              "Alex mocks external clients before running integration tests"
+              "CheckoutService depends on PaymentService and InventoryService — mock both and inject"
 
-Session 3: "Help me test the auth service"
-           → agent retrieves from FAISS:
-              "Alex mocks external clients before running integration tests"
-           → agent responds:
-              "I'll mock the OAuth client first, then we run the integration test"
+Session 3: "Help me test CheckoutService"
+           → agent retrieves from FAISS — already knows the dependencies
+           → responds: "I'll mock PaymentService and InventoryService and inject them into CheckoutService"
+           → no need to explain the setup again
 ```
 
 One session is a preference. Two sessions is a pattern. Session 3 — the agent already knows.
+
 
 > **Audience question:**
 > "Why is it dangerous to update understanding from a single sentence?
@@ -255,7 +286,7 @@ python demo/context_window_crash.py
 **What to say while running:**
 
 "Watch the bar fill up as we talk. At 75% — yellow warning.
-No recovery. No Memory Manager. Just the crash.
+No recovery. Just the crash.
 This is what your users hit in production."
 
 Stop after the crash. Don't show recovery yet.
@@ -299,14 +330,20 @@ Shows the empty `turns` table — session, role, content, timestamp. No rows yet
 
 "This file lives on disk. It survives terminal close. This is where memory will live."
 
-**Step 4 — Uncomment STEP 1 → STEP 2, re-run:**
+**Step 4 — Uncomment STEP 1, re-run:**
 ```
 python modules/01-conversational/module.py
 ```
+Have the conversation. Quit. Check the DB:
+```
+sqlite3 memory_workshop.db "SELECT session, role, content FROM turns;"
+```
+Every turn is saved — session ID, role, content.
 
-**STEP 1:** Save every turn (sync — write immediately)
-**STEP 2:** Load history before each call
-
+**Step 5 — Uncomment STEP 2, re-run:**
+```
+python modules/01-conversational/module.py
+```
 Have the conversation again. Quit. Open a new terminal and run again.
 
 ```
@@ -344,15 +381,7 @@ python modules/02-extraction/setup_db.py
 ```
 Adds `memories` and `cache` to `memory_workshop.db` (already created in Module 1). Shows both schemas — 0 rows.
 
-**Step 2 — Run without memory:**
-```
-python modules/02-extraction/module.py
-```
-Use the suggested questions. Chat with the agent. Quit.
-
-> "No extraction yet. The agent answered but remembered nothing."
-
-**Step 3 — Uncomment STEP 1, re-run:**
+**Step 2 — Uncomment STEP 1, re-run:**
 ```
 python modules/02-extraction/module.py
 ```
@@ -410,113 +439,26 @@ The agent now has context before you say a word.
 >  What could go wrong?
 >  Should users be able to delete their memories?"
 >
-> Expected: wrong extraction, stale facts, privacy/GDPR
+> - **Wrong extraction**: Alex said "maybe I'll try Go today" — agent saves "Alex uses Go". Next session it recommends Go examples to a Python developer.
+> - **Stale facts**: "Alex is on free tier" saved in November. Alex upgraded in December. Agent still tells them they have 100 req/min limits.
+> - **Privacy/GDPR**: Users have a legal right to see and delete their data. If you store memories and can't delete them on request — that's a compliance problem.
+> - **Answer**: Yes — build `delete_memories(user_id)` from day one, not as an afterthought.
 
 ---
 
-## Demo — Memory Manager Recovery (1:40–1:50)
+## Demo 2 — Mem0 (1:50–2:10)
 
-Same conversation as the crash demo — now with the Memory Manager.
+### What is Mem0?
 
-```
-python demo/context_window_recovery.py
-```
+**Mem0** ([github.com/mem0ai/mem0](https://github.com/mem0ai/mem0), 69k stars) is an open-source memory layer for AI agents.
 
-**Copy-paste these questions one at a time:**
+It does exactly what you just built — but as a library:
+- LLM extracts facts, episodic events, and patterns after each turn
+- Stores them in a vector DB (FAISS, Pinecone, Weaviate, etc.)
+- On each new query, semantically searches for relevant memories
+- Returns ranked results to inject into context
 
-```
-1.  Hi, I'm getting a 401 Unauthorized error on all my API calls.
-2.  I am passing the key correctly in the Authorization header as Bearer token.
-3.  The key shows as active in the dashboard. I regenerated it last week.
-4.  I updated the key in my local .env but not sure about the production server.
-    ← compression triggers here — open context_window_demo.db and run:
-       SELECT * FROM context_turns;
-5.  I updated it on the server and restarted. Still getting 401.
-6.  Fixed the newline issue. Now getting 403 Forbidden on the /data endpoint.
-7.  How do I add write scope to my existing API key?
-8.  Done. Now hitting 429 Too Many Requests. I'm on the free tier.
-    ← compression triggers again — check the DB, 1 summary row replaces all 8
-9.  My code doesn't handle 429 — it just crashes. What's the right pattern?
-10. What happens if I exceed the daily request limit on the free tier?
-11. Can I get a temporary rate limit increase while I wait for Pro?
-12. Are there different API endpoints for different regions? Seeing high latency.
-```
-
-**What to say:**
-
-"You just built LLM extraction — Claude reads turns and pulls out what matters.
-That's exactly what the Memory Manager uses to compress.
-Watch the same crash scenario — but now every 4 turns, old turns are summarized and deleted.
-Open `context_window_demo.db` after compression — you'll see one summary row where 8 rows used to be."
-
-> "The agent didn't forget — it remembered the shape, not every word.
->  Your extraction code is what makes this possible."
-
----
-
-## Module 3 — Memory Manager Routing (1:50–2:10)
-
-### Theory (3 mins)
-
-"You now have three memory stores:
-  - SQLite for conversational turns
-  - SQLite for facts and episodic memories
-  - FAISS for understanding
-
-Every query hits all three? That's slow and noisy.
-The right answer for 'what tier am I on?' does not need FAISS.
-The right answer for 'what do I usually do wrong?' does not need an exact SQL lookup.
-
-The Memory Manager decides what to read and what to write for each query."
-
-### The routing logic
-
-```
-Query: "What plan is my DevCore account on?"
-  → exact fact → SQL query → "Pro tier"
-
-Query: "Same issue as last week"
-  → episodic → SQL query by timestamp → "Nov 15 — 401, trailing newline"
-
-Query: "What do I usually get wrong?"
-  → understanding → FAISS semantic search → "copy-paste errors with credentials"
-
-Query: "How do I fix a 429 error?"
-  → no personal memory needed → agent answers from training
-```
-
-### Build
-
-```
-python modules/03-memory-manager/module.py
-```
-
-Uncomment STEP 1 → STEP 2 → STEP 3
-
-**STEP 1:** Route reads — which store for which query type
-**STEP 2:** Route writes — sync facts, async understanding
-**STEP 3:** Full loop — read → respond → write → next turn
-
-### After Module 3
-
-> **Audience question:**
-> "When should memory be deleted?
->  What's dangerous about keeping everything forever?"
->
-> Expected: stale facts, wrong answers, privacy, storage cost
-
----
-
-## Demo 2 — Mem0 (2:05–2:20)
-
-```
-python demo/mem0_demo.py
-```
-
-"You just built this from scratch — SQLite, FAISS, extraction, routing.
-69,000 GitHub stars. This is the industry standard for agent memory.
-
-Watch how many lines this takes with Mem0."
+**Why it matters:** Every production agent team eventually builds this. Mem0 is the industry-standard version — battle-tested, with deduplication, conflict resolution, and cross-session memory built in.
 
 ```python
 from mem0 import Memory
@@ -526,13 +468,26 @@ memory = Memory.from_config(config)  # config: Claude Haiku + FAISS (no Docker n
 # After each turn — Mem0 handles extraction, storage, dedup
 memory.add(messages, user_id="alex-chen")
 
-# Next session — Mem0 handles routing, retrieval, ranking
+# Next session — Mem0 handles retrieval, ranking, dedup
 results = memory.search("401 error", user_id="alex-chen", limit=3)
 ```
 
-"Same architecture you built. Facts in SQL. Understanding in vectors.
-Extraction by LLM. Retrieval with semantic search + reranking.
-Now you understand what's happening inside."
+### Run
+
+**Terminal 1 — Session 1:**
+```
+python demo/mem0_session1.py
+```
+Alex reports a 401 issue. Watch memories get extracted after each turn.
+
+**Terminal 2 (new terminal) — Session 2:**
+```
+python demo/mem0_session2.py
+```
+New process, new terminal. Mem0 loads memories from Session 1 before Alex says anything. Agent already knows about the trailing newline, the Python SDK, and more.
+
+"Same architecture you built in Module 2. You wrote ~300 lines. Mem0 is 2 lines.
+But now you understand every line inside it."
 
 ---
 
@@ -548,8 +503,8 @@ Now you understand what's happening inside."
 **Q: What database should I use in production?**
 > SQLite works up to millions of rows. For scale: Postgres + pgvector, or Pinecone/Weaviate for vectors.
 
-**Q: How does the Memory Manager know what type of query it is?**
-> Keyword matching works for demos. In production: small LLM classifier per query. Adds ~50ms but far more accurate.
+**Q: How does Mem0 know what type of query it is?**
+> Semantic search — Mem0 embeds the query and finds the closest memories. In production you can also add keyword routing or a small LLM classifier.
 
 **Q: Should users be able to delete their memories?**
 > Yes — GDPR requires it. Build a `delete_memories(user_id)` function from day one.
@@ -566,4 +521,3 @@ Now you understand what's happening inside."
 3. **Sync vs Async writes** — facts immediately, understanding after enough context
 4. **Two-terminal test** — if it survives a terminal close, it's long-term memory
 5. **Extraction compresses** — you store what matters, not every word
-6. **Memory Manager routes** — right store for right query, every time

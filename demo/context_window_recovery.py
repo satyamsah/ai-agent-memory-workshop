@@ -234,11 +234,15 @@ def run():
 
         # Every SUMMARIZE_EVERY turns — compress before the API call
         if turn_idx % SUMMARIZE_EVERY == 0:
+            conn = sqlite3.connect(DB_PATH)
+            rows_before = conn.execute("SELECT COUNT(*) FROM context_turns").fetchone()[0]
+            conn.close()
+
             console.print()
             console.print(Panel(
                 f"[yellow]Turn {turn_idx} — Memory Manager triggered[/yellow]\n\n"
-                f"  Compressing {SUMMARIZE_EVERY} turns → 1 summary\n"
-                f"  Old turns deleted. Summary kept.\n\n"
+                f"  DB has [bold]{rows_before} rows[/bold] right now.\n"
+                f"  Compressing → 1 summary row. All others deleted.\n\n"
                 f"  [dim]Tokens before: {token_counts['total']:,}[/dim]",
                 border_style="yellow",
                 title="Memory Manager — Compressing",
@@ -246,14 +250,16 @@ def run():
 
             # Show DB before compression — students open it now
             console.print(Panel(
-                f"  [yellow]Open the database now — before compression:[/yellow]\n\n"
-                f"  [bold]sqlite3 context_window_demo.db \"SELECT * FROM context_turns;\"[/bold]\n\n"
-                f"  [dim]You should see {turn_idx} rows — every turn so far.[/dim]",
+                f"  [bold yellow]→ Open a new terminal and run this now:[/bold yellow]\n\n"
+                f"  sqlite3 context_window_demo.db \"SELECT COUNT(*) as total_rows FROM context_turns;\"\n"
+                f"  sqlite3 context_window_demo.db \"SELECT * FROM context_turns;\"\n\n"
+                f"  You will see [bold]{rows_before} rows[/bold] — every turn so far.\n"
+                f"  Come back and press Enter — we will compress them into 1 summary row.",
                 border_style="yellow",
-                title="Check the DB — Before",
+                title="Your Turn — Query the DB",
             ))
             console.print()
-            console.input("  Press Enter to compress...")
+            console.input("  Done? Press Enter to compress...")
 
             with console.status("[bold yellow]Compressing...[/bold yellow]", spinner="dots"):
                 time.sleep(2)
@@ -263,17 +269,23 @@ def run():
             clear_turns()
             save_turn("assistant", summary, turn_type="summary")
 
+            conn = sqlite3.connect(DB_PATH)
+            rows_after = conn.execute("SELECT COUNT(*) FROM context_turns").fetchone()[0]
+            conn.close()
+
             new_counts = count_context_tokens(messages)
             saved = token_counts["total"] - new_counts["total"]
 
             console.print(Panel(
                 f"[bold green]✓ Compression complete[/bold green]\n\n"
+                f"  DB rows before:  [red]{rows_before}[/red]\n"
+                f"  DB rows after:   [green]{rows_after}[/green]  ← 1 summary row\n\n"
                 f"  Tokens before:  [red]{token_counts['total']:,}[/red]\n"
                 f"  Tokens after:   [green]{new_counts['total']:,}[/green]\n"
                 f"  Tokens freed:   [bold green]{saved:,}[/bold green]\n\n"
                 f"  [yellow]Check the DB now:[/yellow]\n"
                 f"  [bold]sqlite3 context_window_demo.db \"SELECT * FROM context_turns;\"[/bold]\n\n"
-                f"  [dim]All old turns are gone. One summary row remains.[/dim]",
+                f"  [dim]{rows_before} rows gone. {rows_after} summary row remains.[/dim]",
                 title="Memory Manager — Done",
                 border_style="green",
             ))

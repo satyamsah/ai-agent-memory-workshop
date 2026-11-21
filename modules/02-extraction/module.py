@@ -192,70 +192,56 @@ def save_memory(user_id: str, memory_type: str, content: str):
 # Query the DB: SELECT * FROM memories;
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
-#     pass
-
 def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
-    """Claude reads the turn and extracts memories worth keeping."""
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
-    base_url = os.getenv("ANTHROPIC_BASE_URL")
+    pass
 
-    client = anthropic.Anthropic(
-        api_key=api_key or "dummy",
-        auth_token=auth_token if not api_key else None,
-        base_url=base_url,
-    )
-
-    existing_summary = "\n".join(
-        f"[{m['type']}] {m['content']}" for m in existing
-    ) or "None yet"
-
-    prompt = EXTRACTION_PROMPT.format(
-        user_message=user_msg,
-        agent_message=agent_msg,
-        existing_memories=existing_summary,
-    )
-
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=300,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```", 2)[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
-
-    console.print(f"  [dim]  LLM raw: {raw[:120]}[/dim]")
-
-    try:
-        extracted = json.loads(raw)
-    except Exception:
-        return []
-
-    saved = []
-    for fact in extracted.get("facts", []):
-        save_memory(user_id, "fact", fact)
-        saved.append(("[cyan]fact → memories table[/cyan]", fact))
-    for event in extracted.get("episodic", []):
-        save_memory(user_id, "episodic", event)
-        saved.append(("[yellow]episodic → memories table[/yellow]", event))
-    for pattern in extracted.get("understanding", []):
-        save_understanding(pattern)
-        saved.append(("[magenta]understanding → FAISS[/magenta]", pattern))
-
-    return saved
+# def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list):
+#     api_key = os.getenv("ANTHROPIC_API_KEY")
+#     auth_token = os.getenv("ANTHROPIC_AUTH_TOKEN")
+#     base_url = os.getenv("ANTHROPIC_BASE_URL")
+#     client = anthropic.Anthropic(
+#         api_key=api_key or "dummy",
+#         auth_token=auth_token if not api_key else None,
+#         base_url=base_url,
+#     )
+#     existing_text = "\n".join(f"[{m['type']}] {m['content']}" for m in existing) or "None yet"
+#     prompt = EXTRACTION_PROMPT.format(
+#         user_message=user_msg,
+#         agent_message=agent_msg,
+#         existing_memories=existing_text,
+#     )
+#     try:
+#         response = client.messages.create(
+#             model="claude-haiku-4-5-20251001",
+#             max_tokens=300,
+#             messages=[{"role": "user", "content": prompt}],
+#         )
+#         raw = response.content[0].text.strip()
+#         if raw.startswith("```"):
+#             raw = raw.split("```", 2)[1]
+#             if raw.startswith("json"):
+#                 raw = raw[4:]
+#             raw = raw.strip()
+#         extracted = json.loads(raw)
+#     except Exception:
+#         return []
+#     saved = []
+#     for f in extracted.get("facts", []):
+#         save_memory(user_id, "fact", f)
+#         saved.append(("fact", f))
+#     for e in extracted.get("episodic", []):
+#         save_memory(user_id, "episodic", e)
+#         saved.append(("episodic", e))
+#     for p in extracted.get("understanding", []):
+#         save_understanding(p)
+#         saved.append(("understanding", p))
+#     return saved
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 2 — Extract understanding (patterns) → FAISS vector store
 #
 # Uncomment save_understanding + load_understanding below (remove the pass stubs).
-# Also uncomment the 2-line block at the bottom of extract_and_save (marked Step 2).
 # Re-run. After enough signal you will see:
 #   → saved understanding: Alex makes copy-paste errors with credentials
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -263,38 +249,30 @@ def extract_and_save(user_id: str, user_msg: str, agent_msg: str, existing: list
 def save_understanding(content: str):
     pass
 
+# def save_understanding(content: str):
+#     from langchain_community.vectorstores import FAISS
+#     from langchain_huggingface import HuggingFaceEmbeddings
+#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#     if os.path.exists(FAISS_PATH):
+#         store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
+#         store.add_texts([content])
+#     else:
+#         store = FAISS.from_texts([content], embedder)
+#     store.save_local(FAISS_PATH)
+
+
 def load_understanding(query: str, k: int = 2) -> list:
     return []
 
-def save_understanding(content: str):
-    """Save a pattern/understanding to FAISS vector store."""
-    from langchain_community.vectorstores import FAISS
-    from langchain_huggingface import HuggingFaceEmbeddings
-
-    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
-    if os.path.exists(FAISS_PATH):
-        store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
-        store.add_texts([content])
-    else:
-        store = FAISS.from_texts([content], embedder)
-
-    store.save_local(FAISS_PATH)
-    console.print(f"  [dim]→ saved [magenta]understanding[/magenta]: {content}[/dim]")
-
-
-def load_understanding(query: str, k: int = 2) -> list:
-    """Retrieve understanding relevant to this query."""
-    from langchain_community.vectorstores import FAISS
-    from langchain_huggingface import HuggingFaceEmbeddings
-
-    if not os.path.exists(FAISS_PATH):
-        return []
-
-    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
-    docs = store.similarity_search(query, k=k)
-    return [doc.page_content for doc in docs]
+# def load_understanding(query: str, k: int = 2) -> list:
+#     from langchain_community.vectorstores import FAISS
+#     from langchain_huggingface import HuggingFaceEmbeddings
+#     if not os.path.exists(FAISS_PATH):
+#         return []
+#     embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#     store = FAISS.load_local(FAISS_PATH, embedder, allow_dangerous_deserialization=True)
+#     docs = store.similarity_search(query, k=k)
+#     return [doc.page_content for doc in docs]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -307,60 +285,57 @@ def load_understanding(query: str, k: int = 2) -> list:
 # Query the DB: SELECT * FROM cache;
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def check_cache(user_id: str, question: str, threshold: float = 0.85):
-    return None
+# def check_cache(user_id: str, question: str, threshold: float = 0.85):
+#     cache_path = f"cache_faiss_{user_id}"
+#     if not os.path.exists(cache_path):
+#         return None
+#     try:
+#         from langchain_community.vectorstores import FAISS
+#         from langchain_huggingface import HuggingFaceEmbeddings
+#         embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#         store = FAISS.load_local(cache_path, embedder, allow_dangerous_deserialization=True)
+#         results = store.similarity_search_with_score(question, k=1)
+#         if results and results[0][1] < (1 - threshold):
+#             cached_q = results[0][0].page_content
+#             conn = sqlite3.connect(DB_PATH)
+#             row = conn.execute(
+#                 "SELECT answer FROM cache WHERE user_id=? AND question=? LIMIT 1",
+#                 (user_id, cached_q)
+#             ).fetchone()
+#             conn.close()
+#             return row[0] if row else None
+#     except Exception:
+#         return None
 
 def check_cache(user_id: str, question: str, threshold: float = 0.85):
-    """Check if a semantically similar question was already answered."""
-    from langchain_community.vectorstores import FAISS
-    from langchain_huggingface import HuggingFaceEmbeddings
-
-    cache_faiss_path = f"cache_faiss_{user_id}"
-    if not os.path.exists(cache_faiss_path):
-        return None
-
-    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
-    results = store.similarity_search_with_score(question, k=1)
-
-    if results and results[0][1] < (1 - threshold):
-        cached_q = results[0][0].page_content
-        conn = sqlite3.connect(DB_PATH)
-        row = conn.execute(
-            "SELECT answer FROM cache WHERE user_id=? AND question=? LIMIT 1",
-            (user_id, cached_q)
-        ).fetchone()
-        conn.close()
-        if row:
-            return row[0]
     return None
 
 
 # def save_to_cache(user_id: str, question: str, answer: str):
-#     pass
+#     conn = sqlite3.connect(DB_PATH)
+#     conn.execute(
+#         "INSERT INTO cache (user_id, question, answer) VALUES (?, ?, ?)",
+#         (user_id, question, answer)
+#     )
+#     conn.commit()
+#     conn.close()
+#     cache_path = f"cache_faiss_{user_id}"
+#     try:
+#         from langchain_community.vectorstores import FAISS
+#         from langchain_huggingface import HuggingFaceEmbeddings
+#         embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+#         if os.path.exists(cache_path):
+#             store = FAISS.load_local(cache_path, embedder, allow_dangerous_deserialization=True)
+#             store.add_texts([question])
+#         else:
+#             store = FAISS.from_texts([question], embedder)
+#         store.save_local(cache_path)
+#         return True
+#     except Exception:
+#         return True
 
 def save_to_cache(user_id: str, question: str, answer: str):
-    """Save a Q&A pair to cache — SQLite for the answer, FAISS for the question embedding."""
-    from langchain_community.vectorstores import FAISS
-    from langchain_huggingface import HuggingFaceEmbeddings
-
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT INTO cache (user_id, question, answer) VALUES (?, ?, ?)",
-        (user_id, question, answer)
-    )
-    conn.commit()
-    conn.close()
-
-    cache_faiss_path = f"cache_faiss_{user_id}"
-    embedder = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    if os.path.exists(cache_faiss_path):
-        store = FAISS.load_local(cache_faiss_path, embedder, allow_dangerous_deserialization=True)
-        store.add_texts([question])
-    else:
-        store = FAISS.from_texts([question], embedder)
-    store.save_local(cache_faiss_path)
-    return True
+    pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -464,7 +439,7 @@ def run():
     # Then quit, open a NEW terminal, and re-run to see the cross-session moment.
     long_term = load_long_term_memories(USER_ID)
     understanding = load_understanding("user background and history")
-#    long_term = []  # ← STEP 4: delete this line
+    long_term = []  # ← STEP 4: delete this line
 
     # Build session context from long-term memories
     session_context = ""
@@ -601,13 +576,11 @@ def run():
         ))
     else:
         console.print(Panel(
-            "First session complete.\n\n"
-            "What to do next:\n"
-            "  1. Uncomment STEP 1 → STEP 2 → STEP 3 → STEP 4\n"
-            "  2. Re-run this script\n"
-            "  3. Open a NEW terminal and run again\n"
-            "  4. Watch the agent remember Alex\n\n"
-            "[dim]Turn 7 is the same as Turn 6 — it should hit the cache.[/dim]",
+            "Session complete — memories extracted and saved.\n\n"
+            "Now open a NEW terminal and run again:\n"
+            "  python modules/02-extraction/module.py\n\n"
+            "Long-term memories will load at the start of the next session.\n\n"
+            "[dim]Then run Module 3 to see the Memory Manager route those memories.[/dim]",
             border_style="blue",
             title="Next Step",
         ))
