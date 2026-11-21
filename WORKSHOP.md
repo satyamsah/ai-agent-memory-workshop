@@ -17,8 +17,9 @@
 | 0:50–1:10 | Module 1 — Conversational memory | Hands-on |
 | 1:10–1:20 | ☕ Break | — |
 | 1:20–1:50 | Module 2 — Long-term memory extraction + semantic cache | Hands-on |
-| 1:50–2:10 | Demo — Mem0 (industry standard) | Demo |
-| 2:10–2:30 | Q&A + wrap up | Q&A |
+| 1:50–2:00 | Demo — Context window recovery (compression) | Demo |
+| 2:00–2:20 | Demo — Mem0 (industry standard) | Demo |
+| 2:20–2:30 | Q&A + wrap up | Q&A |
 
 ---
 
@@ -446,9 +447,26 @@ The agent now has context before you say a word.
 
 ---
 
-## Demo 2 — Mem0 (1:50–2:10)
+## Demo — Context Window Recovery (1:50–2:00)
 
-### What is Mem0?
+Same conversation as the crash demo — but now every 4 turns, old turns are compressed into a summary and deleted. Context stays flat. Conversation never crashes.
+
+```
+python demo/context_window_recovery.py
+```
+
+Copy-paste the same questions as the crash demo. Watch the context bar stay flat instead of filling up. After every 4 turns, open a new terminal:
+```
+sqlite3 context_window_demo.db "SELECT * FROM context_turns;"
+```
+All old rows are gone. One summary row remains.
+
+> "The agent didn't forget — it remembered the shape, not every word.
+>  That's compression. That's what extraction makes possible."
+
+---
+
+## Demo 2 — Mem0 (2:00–2:20)
 
 **Mem0** ([github.com/mem0ai/mem0](https://github.com/mem0ai/mem0), 69k stars) is an open-source memory layer for AI agents.
 
