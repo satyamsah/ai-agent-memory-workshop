@@ -484,8 +484,9 @@ It does exactly what you just built — but as a library:
 
 ```python
 # SAVE — after each turn
-# Mem0 calls Claude internally, extracts facts/events/patterns, saves to FAISS
-# (Mem0 supports SQLite + other stores too — we use FAISS here, same as Module 2)
+# Mem0 calls Claude internally, extracts facts/events/patterns, then:
+#   → FAISS (vector store) — for semantic search
+#   → SQLite at ~/.mem0/history.db — history + metadata (automatic)
 mem0.add([
     {"role": "user", "content": question},
     {"role": "assistant", "content": answer},
