@@ -77,11 +77,13 @@ While students run `python check_setup.py`:
 > # then open .env and paste your ANTHROPIC_API_KEY
 > ```
 
-> **Step 3 — Activate the virtual environment:**
+> **Step 3 — Create and activate the virtual environment:**
 > ```
 > cd memory-workshop
-> source .venv/bin/activate    # Mac/Linux
-> .venv\Scripts\activate       # Windows
+> python3 -m venv .venv          # create it (once only)
+> source .venv/bin/activate      # Mac/Linux
+> .venv\Scripts\activate         # Windows
+> pip install -r requirements.txt
 > ```
 > **If you don't see `(.venv)` in your prompt — nothing will work.**
 
