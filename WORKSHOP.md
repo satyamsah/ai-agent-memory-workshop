@@ -480,16 +480,19 @@ It does exactly what you just built — but as a library:
 
 **Why it matters:** Every production agent team eventually builds this. Mem0 is the industry-standard version — battle-tested, with deduplication, conflict resolution, and cross-session memory built in.
 
+**Two lines replace everything you built in Module 2:**
+
 ```python
-from mem0 import Memory
+# SAVE — after each turn
+# Mem0 calls Claude internally, extracts facts/events/patterns, saves to FAISS
+mem0.add([
+    {"role": "user", "content": question},
+    {"role": "assistant", "content": answer},
+], user_id="alex-chen")
 
-memory = Memory.from_config(config)  # config: Claude Haiku + FAISS (no Docker needed)
-
-# After each turn — Mem0 handles extraction, storage, dedup
-memory.add(messages, user_id="alex-chen")
-
-# Next session — Mem0 handles retrieval, ranking, dedup
-results = memory.search("401 error", user_id="alex-chen", limit=3)
+# RETRIEVE — before each turn
+# Mem0 embeds the question, vector similarity search in FAISS, returns top matches
+memories = mem0.search(question, filters={"user_id": "alex-chen"}, limit=3)
 ```
 
 ### Run
